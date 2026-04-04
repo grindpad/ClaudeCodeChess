@@ -1,32 +1,50 @@
 /**
- * Orchestrates the board + navigation controls + notation panel.
- * Portrait: board on top, notation panel below.
- * Landscape: board+controls on the left column, notation panel on the right.
+ * Orchestrates the board + evaluation bar + navigation controls + notation panel.
+ *
+ * Portrait layout:
+ *   [EvalBar (horizontal, above board)]
+ *   [ChessBoard]
+ *   [NavigationControls]
+ *   [NotationPanel (fills remaining space)]
+ *
+ * Landscape layout:
+ *   Left column: [EvalBar (vertical)] [ChessBoard] [NavigationControls]
+ *   Right column: [NotationPanel]
  */
 
 import React from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import ChessBoardWrapper from './ChessBoardWrapper';
+import EvaluationBar from './EvaluationBar';
 import NavigationControls from './NavigationControls';
 import NotationPanel from '../notation/NotationPanel';
+
+const EVAL_BAR_THICKNESS = 16;
 
 export default function BoardContainer() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  // Board sizing: always a square, snapped to multiple of 8
+  // Reserve space for the eval bar beside/above the board
   const boardSize = isLandscape
-    ? Math.min(height - 80, width * 0.5)
-    : Math.min(width, height * 0.52);
+    ? Math.min(height - 80, (width - EVAL_BAR_THICKNESS - 8) * 0.5)
+    : Math.min(width - EVAL_BAR_THICKNESS - 8, height * 0.52);
 
   const snappedSize = Math.floor(boardSize / 8) * 8;
 
   if (isLandscape) {
     return (
       <View style={styles.landscapeRow}>
-        {/* Left column: board + nav controls */}
+        {/* Left column: eval bar + board + nav */}
         <View style={styles.boardColumn}>
-          <ChessBoardWrapper size={snappedSize} />
+          <View style={styles.boardWithBar}>
+            <EvaluationBar
+              orientation="vertical"
+              size={snappedSize}
+              thickness={EVAL_BAR_THICKNESS}
+            />
+            <ChessBoardWrapper size={snappedSize} />
+          </View>
           <NavigationControls />
         </View>
 
@@ -40,7 +58,14 @@ export default function BoardContainer() {
 
   return (
     <View style={styles.portraitColumn}>
-      <ChessBoardWrapper size={snappedSize} />
+      <View style={styles.boardWithBarHorizontal}>
+        <EvaluationBar
+          orientation="horizontal"
+          size={snappedSize}
+          thickness={EVAL_BAR_THICKNESS}
+        />
+        <ChessBoardWrapper size={snappedSize} />
+      </View>
       <NavigationControls />
       <View style={styles.notationArea}>
         <NotationPanel />
@@ -53,6 +78,10 @@ const styles = StyleSheet.create({
   portraitColumn: {
     flex: 1,
     alignItems: 'center',
+  },
+  boardWithBarHorizontal: {
+    alignItems: 'center',
+    gap: 4,
   },
   notationArea: {
     flex: 1,
@@ -68,6 +97,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+  },
+  boardWithBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
   },
   notationColumn: {
     flex: 1,

@@ -10,13 +10,19 @@ export default function NavigationControls() {
   const flipBoard = useChessStore((s) => s.flipBoard);
   const navigationPath = useChessStore((s) => s.navigationPath);
   const moveTree = useChessStore((s) => s.moveTree);
+  const isAnalysing = useChessStore((s) => s.isAnalysing);
+  const startAnalysis = useChessStore((s) => s.startAnalysis);
+  const stopAnalysis = useChessStore((s) => s.stopAnalysis);
+  const engineStatus = useChessStore((s) => s.engineStatus);
 
   const atStart = navigationPath.length === 0;
-  // currentNode has no children in ANY line (main or variation) iff atEnd
   const currentNode = useChessStore((s) => s.currentNode);
   const atEnd = !moveTree || (!currentNode
-    ? moveTree.mainLine.length === 0  // at root with no moves
-    : false); // navigateForward handles the real bound check
+    ? moveTree.mainLine.length === 0
+    : false);
+
+  const engineUnavailable = engineStatus === 'unsupported' || engineStatus === 'error';
+  const engineLabel = isAnalysing ? '⚡' : '⚙';
 
   return (
     <View style={styles.row}>
@@ -24,6 +30,12 @@ export default function NavigationControls() {
       <NavButton label="◀" onPress={navigateBack} disabled={atStart} />
       <NavButton label="▶" onPress={navigateForward} disabled={atEnd} />
       <NavButton label="PGN" onPress={openPgnImport} />
+      <NavButton
+        label={engineLabel}
+        onPress={isAnalysing ? stopAnalysis : startAnalysis}
+        disabled={engineUnavailable || engineStatus === 'loading'}
+        active={isAnalysing}
+      />
       <NavButton label="⇌" onPress={flipBoard} />
     </View>
   );
@@ -33,15 +45,18 @@ function NavButton({
   label,
   onPress,
   disabled = false,
+  active = false,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  active?: boolean;
 }) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.button,
+        active && styles.buttonActive,
         disabled && styles.buttonDisabled,
         pressed && !disabled && styles.buttonPressed,
       ]}
@@ -65,6 +80,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
+  },
+  buttonActive: {
+    backgroundColor: '#3949ab',
   },
   button: {
     backgroundColor: '#2d2d4e',
