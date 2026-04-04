@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import NotationPanel from '../notation/NotationPanel';
 import ExplorerPanel from '../explorer/ExplorerPanel';
+import ErrorBoundary from './ErrorBoundary';
 import { useChessStore } from '../../store';
 
 type Tab = 'notation' | 'explorer';
@@ -40,7 +41,15 @@ export default function PanelTabs() {
 
       {/* Panel content */}
       <View style={styles.panelContent}>
-        {activeTab === 'notation' ? <NotationPanel /> : <ExplorerPanel />}
+        {activeTab === 'notation' ? (
+          <ErrorBoundary label="Notation">
+            <NotationPanel />
+          </ErrorBoundary>
+        ) : (
+          <ErrorBoundary label="Explorer">
+            <ExplorerPanel />
+          </ErrorBoundary>
+        )}
       </View>
     </View>
   );

@@ -1,6 +1,32 @@
 import type { StateCreator } from 'zustand';
 import type { ChessStore } from '../chessStore';
 
+export type BoardTheme = 'classic' | 'blue' | 'walnut';
+
+export interface BoardThemeColors {
+  white: string;
+  black: string;
+  lastMoveHighlight: string;
+}
+
+export const BOARD_THEMES: Record<BoardTheme, BoardThemeColors> = {
+  classic: {
+    white: '#eeeed2',
+    black: '#769656',
+    lastMoveHighlight: 'rgba(255, 255, 0, 0.4)',
+  },
+  blue: {
+    white: '#dee3e6',
+    black: '#8ca2ad',
+    lastMoveHighlight: 'rgba(100, 180, 255, 0.5)',
+  },
+  walnut: {
+    white: '#f0d9b5',
+    black: '#b58863',
+    lastMoveHighlight: 'rgba(255, 200, 80, 0.5)',
+  },
+};
+
 export interface UiSlice {
   // ── State ──────────────────────────────────────────────────────────────────
   notationPanelVisible: boolean;
@@ -10,6 +36,8 @@ export interface UiSlice {
   boardFlipped: boolean;
   lastMoveSquares: [string, string] | null;
   selectedSquare: string | null;
+  boardTheme: BoardTheme;
+  showCoordinates: boolean;
 
   // ── Actions ────────────────────────────────────────────────────────────────
   toggleNotationPanel: () => void;
@@ -21,6 +49,8 @@ export interface UiSlice {
   flipBoard: () => void;
   setLastMove: (squares: [string, string] | null) => void;
   setSelectedSquare: (sq: string | null) => void;
+  setBoardTheme: (theme: BoardTheme) => void;
+  toggleCoordinates: () => void;
 }
 
 export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], UiSlice> =
@@ -32,32 +62,18 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
     boardFlipped: false,
     lastMoveSquares: null,
     selectedSquare: null,
+    boardTheme: 'classic',
+    showCoordinates: true,
 
-    toggleNotationPanel() {
-      set((s) => ({ notationPanelVisible: !s.notationPanelVisible }));
-    },
-    toggleExplorerPanel() {
-      set((s) => ({ explorerPanelVisible: !s.explorerPanelVisible }));
-    },
-    openPgnImport() {
-      set({ pgnImportModalVisible: true });
-    },
-    closePgnImport() {
-      set({ pgnImportModalVisible: false });
-    },
-    openSettings() {
-      set({ settingsModalVisible: true });
-    },
-    closeSettings() {
-      set({ settingsModalVisible: false });
-    },
-    flipBoard() {
-      set((s) => ({ boardFlipped: !s.boardFlipped }));
-    },
-    setLastMove(squares) {
-      set({ lastMoveSquares: squares });
-    },
-    setSelectedSquare(sq) {
-      set({ selectedSquare: sq });
-    },
+    toggleNotationPanel() { set((s) => ({ notationPanelVisible: !s.notationPanelVisible })); },
+    toggleExplorerPanel() { set((s) => ({ explorerPanelVisible: !s.explorerPanelVisible })); },
+    openPgnImport() { set({ pgnImportModalVisible: true }); },
+    closePgnImport() { set({ pgnImportModalVisible: false }); },
+    openSettings() { set({ settingsModalVisible: true }); },
+    closeSettings() { set({ settingsModalVisible: false }); },
+    flipBoard() { set((s) => ({ boardFlipped: !s.boardFlipped })); },
+    setLastMove(squares) { set({ lastMoveSquares: squares }); },
+    setSelectedSquare(sq) { set({ selectedSquare: sq }); },
+    setBoardTheme(theme) { set({ boardTheme: theme }); },
+    toggleCoordinates() { set((s) => ({ showCoordinates: !s.showCoordinates })); },
   });
