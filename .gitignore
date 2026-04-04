@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 dist/
+public/stockfish-18-single.wasm
 web-build/
 *.jks
 *.p8
