@@ -2,11 +2,12 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
 import { useEngine } from '../src/hooks/useEngine';
+import { useExplorer } from '../src/hooks/useExplorer';
 
 function RootLayoutInner() {
-  // Mount the engine once at the root. It subscribes to the Zustand store
-  // via subscribeWithSelector and does not trigger renders here.
+  // Both hooks subscribe to currentFen via subscribeWithSelector — no re-renders here.
   useEngine();
+  useExplorer();
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }

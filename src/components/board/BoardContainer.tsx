@@ -17,7 +17,7 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import ChessBoardWrapper from './ChessBoardWrapper';
 import EvaluationBar from './EvaluationBar';
 import NavigationControls from './NavigationControls';
-import NotationPanel from '../notation/NotationPanel';
+import PanelTabs from '../shared/PanelTabs';
 
 const EVAL_BAR_THICKNESS = 16;
 
@@ -50,7 +50,7 @@ export default function BoardContainer() {
 
         {/* Right column: notation panel */}
         <View style={styles.notationColumn}>
-          <NotationPanel />
+          <PanelTabs />
         </View>
       </View>
     );
@@ -68,7 +68,7 @@ export default function BoardContainer() {
       </View>
       <NavigationControls />
       <View style={styles.notationArea}>
-        <NotationPanel />
+        <PanelTabs />
       </View>
     </View>
   );
