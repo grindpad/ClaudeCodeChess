@@ -1,14 +1,15 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { SafeAreaView, StyleSheet } from 'react-native';
+import BoardContainer from '../../src/components/board/BoardContainer';
+import GameHeader from '../../src/components/board/GameHeader';
+import PgnImportModal from '../../src/components/pgn/PgnImportModal';
 
-/**
- * Main board screen. Will be filled in Phase 2–3 once the board component
- * and navigation logic are implemented.
- */
 export default function BoardScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.placeholder}>Board — coming in Phase 2</Text>
-    </View>
+    <SafeAreaView style={styles.container}>
+      <GameHeader />
+      <BoardContainer />
+      <PgnImportModal />
+    </SafeAreaView>
   );
 }
 
@@ -16,11 +17,5 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholder: {
-    color: '#a8dadc',
-    fontSize: 18,
   },
 });
