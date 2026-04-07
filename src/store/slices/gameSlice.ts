@@ -39,6 +39,46 @@ function buildNodeMap(nodes: MoveNode[], map: Map<string, MoveNode>): void {
   }
 }
 
+/** Removes a subtree of nodes (and all their variation descendants) from the map. */
+function removeNodesFromMap(nodes: MoveNode[], map: Map<string, MoveNode>): void {
+  for (const node of nodes) {
+    map.delete(node.id);
+    for (const variation of node.variations) {
+      removeNodesFromMap(variation, map);
+    }
+  }
+}
+
+/**
+ * Depth-first search for a node by ID. Returns the NavigationPath to that node,
+ * or null if not found.
+ */
+function findPathToNode(tree: MoveTree, nodeId: string): NavigationPath | null {
+  return searchLine(tree.mainLine, nodeId, []);
+}
+
+function searchLine(
+  line: MoveNode[],
+  nodeId: string,
+  basePath: NavigationPath,
+  variationIndex?: number
+): NavigationPath | null {
+  for (let i = 0; i < line.length; i++) {
+    // Build the path segment for this node
+    const nodePath: NavigationPath =
+      variationIndex !== undefined
+        ? [...basePath, { variationIndex, index: i }]
+        : [...basePath, { index: i }];
+    const node = line[i];
+    if (node.id === nodeId) return nodePath;
+    for (let vi = 0; vi < node.variations.length; vi++) {
+      const found = searchLine(node.variations[vi], nodeId, nodePath, vi);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 /**
  * Given a tree and a NavigationPath, return the line (array of MoveNodes)
  * that the path cursor is currently inside.
@@ -114,6 +154,9 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
           navigationPath: [],
           currentNode: null,
           currentFen: tree.rootFen,
+          // BUG-003 FIX: Clear stale explorer data from the previous game
+          explorerData: null,
+          explorerError: null,
         });
       } catch (err) {
         console.error('PGN parse error:', err);
@@ -137,29 +180,32 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       const nextIndex = lastSeg ? lastSeg.index + 1 : 0;
       const existingNext = currentLine[nextIndex];
 
-      // Check if this move already exists in the tree (avoid duplicates)
+      // Check if this move already exists as the next main-line move
       if (existingNext && existingNext.uci === uci) {
         const newPath = advancePath(tree, navigationPath);
         set({ navigationPath: newPath, currentNode: existingNext, currentFen: existingNext.fen });
         return;
       }
 
-      // Check if move exists as a variation of the current node
-      if (lastSeg) {
-        const currentNode = currentLine[lastSeg.index];
-        if (currentNode) {
-          for (let vi = 0; vi < currentNode.variations.length; vi++) {
-            if (currentNode.variations[vi][0]?.uci === uci) {
-              const newPath: NavigationPath = [...navigationPath, { variationIndex: vi, index: 0 }];
-              const varNode = currentNode.variations[vi][0];
-              set({ navigationPath: newPath, currentNode: varNode, currentFen: varNode.fen });
-              return;
-            }
+      // BUG-002 FIX: Check if move exists as a variation of the *next* node
+      // (existingNext.variations hold alternatives from the same position as existingNext)
+      if (existingNext) {
+        for (let vi = 0; vi < existingNext.variations.length; vi++) {
+          if (existingNext.variations[vi][0]?.uci === uci) {
+            const nextPath: NavigationPath = lastSeg
+              ? [...navigationPath.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }]
+              : [{ index: 0 }];
+            const newPath: NavigationPath = [...nextPath, { variationIndex: vi, index: 0 }];
+            const varNode = existingNext.variations[vi][0];
+            set({ navigationPath: newPath, currentNode: varNode, currentFen: varNode.fen });
+            return;
           }
         }
       }
 
-      // New move — create a node and append to the current line
+      // New move — create a node and splice into the current line.
+      // BUG-001 FIX: Truncate the line at nextIndex (discard any nodes after the current
+      // position), then append the new node. Also remove orphaned nodes from nodeMap.
       const parentNode = lastSeg ? currentLine[lastSeg.index] : null;
       const newNode: MoveNode = {
         id: uuidv4(),
@@ -178,10 +224,14 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         parent: parentNode?.id ?? null,
       };
 
-      // Immutably append to the line
-      const newLine = [...currentLine, newNode];
-      const newTree = spliceLineIntoTree(tree, navigationPath, newLine);
+      // Remove truncated nodes from nodeMap before building the new tree
       const newNodeMap = new Map(nodeMap);
+      const truncated = currentLine.slice(nextIndex);
+      removeNodesFromMap(truncated, newNodeMap);
+
+      // Slice the line at the current position and append the new node
+      const newLine = [...currentLine.slice(0, nextIndex), newNode];
+      const newTree = spliceLineIntoTree(tree, navigationPath, newLine);
       newNodeMap.set(newNode.id, newNode);
 
       const newPath: NavigationPath = lastSeg
@@ -224,9 +274,16 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
     enterVariation(nodeId, variationIndex) {
       const { moveTree, nodeMap } = get();
       if (!moveTree) return;
-      // Find the path to nodeId, then append the variation entry
-      // This is handled via navigateToNode after constructing the correct path
-      // For now, delegates to the caller who builds the full path
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+      const variation = node.variations[variationIndex];
+      if (!variation || variation.length === 0) return;
+      // Find the path to this node by searching the tree, then append the variation entry
+      const nodePath = findPathToNode(moveTree, nodeId);
+      if (!nodePath) return;
+      const newPath: NavigationPath = [...nodePath, { variationIndex, index: 0 }];
+      const firstVarNode = variation[0];
+      set({ navigationPath: newPath, currentNode: firstVarNode, currentFen: firstVarNode.fen });
     },
 
     resetToStartPosition() {

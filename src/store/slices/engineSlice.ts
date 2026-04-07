@@ -16,6 +16,7 @@ export interface EngineSlice {
   stopAnalysis: () => void;
   setTargetDepth: (depth: number) => void;
   setMultiPv: (n: number) => void;
+  clearEngineOutput: () => void;
 
   // ── Internal actions (called by EngineController bridge only) ──────────────
   _receiveEngineOutput: (output: Partial<EngineOutput>) => void;
@@ -44,11 +45,29 @@ export const createEngineSlice: StateCreator<ChessStore, [['zustand/subscribeWit
     },
 
     setMultiPv(n) {
-      set({ multiPvCount: n });
+      set({ multiPvCount: Math.max(1, Math.min(4, n)) });
+    },
+
+    clearEngineOutput() {
+      set({ engineOutput: null });
     },
 
     _receiveEngineOutput(output) {
       const prev = get().engineOutput;
+      const multipvLineNum = (output as Record<string, unknown>)._multipvLine as number | undefined;
+
+      let newMultipv: import('../../types/engine').PvLine[];
+      if (output.pv && multipvLineNum !== undefined && multipvLineNum >= 1) {
+        // Update only the specific multipv slot (1-indexed → 0-indexed)
+        const arr = [...(prev?.multipv ?? [])];
+        arr[multipvLineNum - 1] = output.pv;
+        // BUG-006 FIX: Filter out undefined slots created by sparse array assignment
+        newMultipv = (arr.slice(0, get().multiPvCount) as (import('../../types/engine').PvLine | undefined)[])
+          .filter((line): line is import('../../types/engine').PvLine => line !== undefined);
+      } else {
+        newMultipv = prev?.multipv ?? [];
+      }
+
       set({
         engineOutput: {
           depth: output.depth ?? prev?.depth ?? 0,
@@ -58,7 +77,7 @@ export const createEngineSlice: StateCreator<ChessStore, [['zustand/subscribeWit
           time: output.time ?? prev?.time ?? 0,
           score: output.score !== undefined ? output.score : (prev?.score ?? null),
           pv: output.pv !== undefined ? output.pv : (prev?.pv ?? null),
-          multipv: output.multipv ?? prev?.multipv ?? [],
+          multipv: newMultipv,
           bestMove: output.bestMove !== undefined ? output.bestMove : (prev?.bestMove ?? null),
         },
       });

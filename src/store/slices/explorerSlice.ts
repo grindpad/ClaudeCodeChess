@@ -18,7 +18,7 @@ export interface ExplorerSlice {
 let activeController: AbortController | null = null;
 
 export const createExplorerSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], ExplorerSlice> =
-  (set) => ({
+  (set, get) => ({
     explorerData: null,
     explorerLoading: false,
     explorerError: null,
@@ -29,12 +29,17 @@ export const createExplorerSlice: StateCreator<ChessStore, [['zustand/subscribeW
       activeController?.abort();
       activeController = new AbortController();
 
+      const token = get().lichessToken || undefined;
       set({ explorerLoading: true, explorerError: null });
       try {
-        const data = await fetchExplorerData(fen, activeController.signal);
+        const data = await fetchExplorerData(fen, activeController.signal, token);
         set({ explorerData: data, explorerLoading: false });
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') return; // stale request — ignore
+        // BUG-004 FIX: Reset loading state before discarding aborted request
+        if (err instanceof Error && err.name === 'AbortError') {
+          set({ explorerLoading: false });
+          return;
+        }
         const isOffline =
           err instanceof TypeError && err.message.toLowerCase().includes('network');
         set({
