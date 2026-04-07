@@ -1,34 +1,55 @@
 /**
- * EngineController — owns the Stockfish Web Worker lifecycle.
+ * EngineController — owns the Stockfish engine lifecycle via a StockfishBridge.
  *
- * Architecture:
- * - stockfish-18-single.js (served from public/) runs as the Web Worker.
- *   It is a self-contained UCI engine: it receives UCI command strings via
- *   postMessage and sends UCI output strings back via postMessage.
- * - This class is the sole owner of the Worker reference.
- * - It debounces position changes (150 ms) to avoid firing analysis on every
- *   navigation keypress.
- * - It is constructed once by useEngine (mounted in the root layout) and
- *   destroyed on unmount.
+ * Safe UCI command sequence per search:
+ *   1. stop           (only if isSearching)
+ *   2. isready        (always — synchronisation point)
+ *   3. readyok        (we wait for this before sending any further commands)
+ *   4. setoption …    (only if MultiPV changed — after readyok, engine is settled)
+ *   5. position fen X
+ *   6. go depth N
  *
- * WASM availability:
- * - On Expo Web: full WASM + Web Workers → normal operation
- * - On Expo Go / native: isWasmSupported() returns false → status = 'unsupported'
+ * Moving setoption to after readyok is critical: the WASM build crashes when
+ * setoption is sent before the engine has fully processed a stop.
+ *
+ * Platform branching:
+ *   - Web  → StockfishBridgeWeb  (Web Worker, requires WASM support)
+ *   - Android → StockfishBridgeNative (react-native-stockfish-chess-engine)
+ *   - iOS → 'unsupported' (react-native-stockfish-chess-engine is Android-only)
  */
 
+import { Chess } from 'chess.js';
 import { parseUciLine } from './uciParser';
-import { isWasmSupported } from '../utils/platform';
+import { isWasmSupported, isWeb, isIOS } from '../utils/platform';
+import { createStockfishBridge } from './StockfishBridgeFactory';
+import { STARTING_FEN } from '../types/moveTree';
+import type { StockfishBridge } from './StockfishBridge';
 import type { EngineOutput, EngineStatus } from '../types/engine';
 
 type OutputFn = (output: Partial<EngineOutput>) => void;
 type StatusFn = (status: EngineStatus) => void;
 
+interface PendingSearch {
+  fen: string;
+  depth: number;
+  multiPv: number;
+}
+
 export class EngineController {
-  private worker: Worker | null = null;
+  private bridge: StockfishBridge | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly onOutput: OutputFn;
   private readonly onStatus: StatusFn;
   private readonly debounceMs = 150;
+  private analysisFen: string = STARTING_FEN;
+  private isSearching = false;
+  private currentMultiPv = 1;
+  /**
+   * Set in the debounce timer; consumed in the readyok handler.
+   * Ensures position+go (and setoption) are only sent after the engine confirms
+   * it is fully settled via readyok.
+   */
+  private pendingSearch: PendingSearch | null = null;
 
   constructor(onOutput: OutputFn, onStatus: StatusFn) {
     this.onOutput = onOutput;
@@ -36,66 +57,116 @@ export class EngineController {
   }
 
   initialize(): void {
-    if (!isWasmSupported() || typeof Worker === 'undefined') {
+    // iOS: react-native-stockfish-chess-engine is Android-only
+    if (isIOS()) {
+      this.onStatus('unsupported');
+      return;
+    }
+
+    // Web: requires WASM and Worker support
+    if (isWeb() && (!isWasmSupported() || typeof Worker === 'undefined')) {
       this.onStatus('unsupported');
       return;
     }
 
     try {
-      // stockfish-18-single.js is served from public/ at the web root
-      this.worker = new Worker('/stockfish-18-single.js');
-      this.worker.onmessage = this.handleMessage.bind(this);
-      this.worker.onerror = (e) => {
-        console.error('[EngineController] worker error:', e);
+      const bridge = createStockfishBridge();
+      this.bridge = bridge;
+
+      bridge.onOutput(this.handleMessage.bind(this));
+
+      bridge.launch().then(() => {
+        // launch() resolves once the worker/process is started.
+        // Send initial UCI handshake.
+        bridge.sendCommand('uci');
+        bridge.sendCommand('isready');
+      }).catch((err) => {
+        console.error('[EngineController] bridge launch failed:', err);
+        this.isSearching = false;
+        this.pendingSearch = null;
+        this.currentMultiPv = 1;
         this.onStatus('error');
-      };
+        // Schedule a restart after a short delay (mirrors the old worker onerror path)
+        setTimeout(() => {
+          this.bridge?.shutdown();
+          this.bridge = null;
+          this.initialize();
+        }, 1000);
+      });
 
       this.onStatus('loading');
-
-      // Standard UCI handshake
-      this.worker.postMessage('uci');
-      this.worker.postMessage('isready');
     } catch (err) {
-      console.error('[EngineController] failed to create worker:', err);
+      console.error('[EngineController] failed to create bridge:', err);
       this.onStatus('error');
     }
   }
 
-  private handleMessage(event: MessageEvent): void {
-    const line: string =
-      typeof event.data === 'string' ? event.data : String(event.data);
-
+  private handleMessage(line: string): void {
     if (!line) return;
 
     if (line === 'readyok') {
-      this.onStatus('ready');
+      if (this.pendingSearch) {
+        // Engine is fully settled — now safe to change options and start search
+        const { fen, depth, multiPv } = this.pendingSearch;
+        this.pendingSearch = null;
+
+        // setoption AFTER readyok: engine is idle and settled, safest moment
+        if (multiPv !== this.currentMultiPv) {
+          this.bridge!.sendCommand(`setoption name MultiPV value ${multiPv}`);
+          this.currentMultiPv = multiPv;
+        }
+
+        this.bridge!.sendCommand(`position fen ${fen}`);
+        this.bridge!.sendCommand(`go depth ${depth}`);
+        this.isSearching = true;
+        this.onStatus('analyzing');
+      } else {
+        // Initial handshake, or readyok after a cancelled search
+        this.onStatus('ready');
+      }
       return;
     }
 
-    if (line.startsWith('uciok')) {
-      // UCI handshake complete — nothing needed
-      return;
-    }
+    if (line.startsWith('uciok')) return;
 
     const parsed = parseUciLine(line);
     if (!parsed) return;
 
     if (line.startsWith('bestmove')) {
+      this.isSearching = false;
       this.onOutput(parsed);
-      this.onStatus('ready');
+      // Don't report 'ready' if we are already mid-cycle for a new search:
+      // the readyok for that search will call onStatus('analyzing') instead.
+      if (!this.pendingSearch) {
+        this.onStatus('ready');
+      }
     } else if (line.startsWith('info') && parsed.score !== undefined) {
-      // Only forward lines that have a score (skip lines with only depth/nodes/time)
+      if (parsed.pv && parsed.pv.moves.length > 0) {
+        parsed.pv = { ...parsed.pv, san: this.computeSan(parsed.pv.moves) };
+      }
       this.onOutput(parsed);
     }
   }
 
-  /**
-   * Schedule analysis of the given position.
-   * Cancels any pending analysis before starting; the 150 ms debounce prevents
-   * a burst of analysis calls during fast navigation.
-   */
+  private computeSan(uciMoves: string[]): string[] {
+    try {
+      const chess = new Chess(this.analysisFen);
+      const san: string[] = [];
+      for (const uci of uciMoves) {
+        const from = uci.slice(0, 2);
+        const to = uci.slice(2, 4);
+        const promotion = uci[4] as 'q' | 'r' | 'b' | 'n' | undefined;
+        san.push(chess.move({ from, to, promotion }).san);
+      }
+      return san;
+    } catch {
+      return [];
+    }
+  }
+
   analyzePosition(fen: string, depth: number, multiPv: number): void {
-    if (!this.worker) return;
+    this.analysisFen = fen;
+    if (!this.bridge) return;
 
     if (this.pendingTimer) {
       clearTimeout(this.pendingTimer);
@@ -103,12 +174,16 @@ export class EngineController {
     }
 
     this.pendingTimer = setTimeout(() => {
-      if (!this.worker) return;
-      this.worker.postMessage('stop');
-      this.worker.postMessage(`position fen ${fen}`);
-      const multipvFlag = multiPv > 1 ? ` multipv ${multiPv}` : '';
-      this.worker.postMessage(`go depth ${depth}${multipvFlag}`);
-      this.onStatus('analyzing');
+      if (!this.bridge) return;
+
+      if (this.isSearching) {
+        this.bridge.sendCommand('stop');
+        this.isSearching = false;
+      }
+
+      // Store params; setoption + position + go are sent only after readyok
+      this.pendingSearch = { fen, depth, multiPv };
+      this.bridge.sendCommand('isready');
     }, this.debounceMs);
   }
 
@@ -117,12 +192,16 @@ export class EngineController {
       clearTimeout(this.pendingTimer);
       this.pendingTimer = null;
     }
-    this.worker?.postMessage('stop');
+    this.pendingSearch = null;
+    if (this.isSearching) {
+      this.bridge?.sendCommand('stop');
+      this.isSearching = false;
+    }
   }
 
   destroy(): void {
     this.stopAnalysis();
-    this.worker?.terminate();
-    this.worker = null;
+    this.bridge?.shutdown();
+    this.bridge = null;
   }
 }

@@ -30,7 +30,9 @@
     },
     "scheme": "claude-code-chess",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-dev-client",
+      "react-native-stockfish-chess-engine"
     ]
   }
 }

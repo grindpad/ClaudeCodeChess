@@ -357,3 +357,73 @@ Implement `enterVariation` properly so the interface contract is met and future 
 3. **Sparse array hazard** — BUG-006: Assigning to a non-contiguous index of a copied array creates undefined slots that are passed downstream to React components without null-checks.
 
 4. **Stub implementation** — BUG-007: An interface method left as a no-op. Low severity since no callers, but creates a false API contract.
+
+---
+
+## Engine Refactor — Native Bridge (2026-04-07)
+
+### What Changed
+
+The Stockfish engine integration was refactored from a direct `Worker` dependency inside `EngineController` to a platform-abstracted bridge pattern. The following files were created or modified:
+
+**New files:**
+
+| File | Purpose |
+|------|---------|
+| `src/engine/StockfishBridge.ts` | Interface: `launch()`, `sendCommand()`, `onOutput()`, `shutdown()` |
+| `src/engine/StockfishBridgeWeb.ts` | Web implementation — wraps `new Worker('/stockfish-18-lite-single.js')` |
+| `src/engine/StockfishBridgeNative.ts` | Android implementation — wraps `react-native-stockfish-chess-engine` |
+| `src/engine/StockfishBridgeFactory.ts` | Factory: `createStockfishBridge()` — picks the right impl via `isWeb()` |
+
+**Modified files:**
+
+| File | Change |
+|------|--------|
+| `src/engine/EngineController.ts` | Replaced `this.worker: Worker` with `this.bridge: StockfishBridge`; all `worker.postMessage(x)` calls become `bridge.sendCommand(x)`; `worker.onmessage` handler moved into `bridge.onOutput()` registration in `initialize()` |
+| `app.json` | Added `"expo-dev-client"` and `"react-native-stockfish-chess-engine"` to the `plugins` array |
+
+**Installed packages:**
+
+- `react-native-stockfish-chess-engine` (v0.1.5) — installed with `--legacy-peer-deps` due to transitive peer dep conflict between `react-native-reanimated@4.2.3` and `react-native@0.79.5`
+- `expo-dev-client` — required for custom native builds (EAS Build / local `npx expo run:android`)
+
+### Why
+
+The previous `EngineController` directly instantiated a Web Worker, which works only on web. To support engine analysis on Android, we needed a native bridge. The abstraction keeps the UCI protocol logic (debounce, isready/readyok handshake, stop/go, MultiPV, SAN computation) 100% unchanged in `EngineController` — only the transport layer is swapped.
+
+### Platform Branching Strategy
+
+```
+initialize() in EngineController
+  ├── isIOS()        → onStatus('unsupported')       [iOS — package is Android-only]
+  ├── isWeb() && !isWasmSupported()
+  │              → onStatus('unsupported')            [old browser / Expo Go web]
+  └── else       → createStockfishBridge()
+        ├── isWeb() → StockfishBridgeWeb              [Web Worker path, unchanged]
+        └── else    → StockfishBridgeNative           [Android native module]
+```
+
+`createStockfishBridge()` uses `require()` inside each branch so the unused module is never evaluated on the other platform — no Worker construction errors on native, no NativeModules errors on web.
+
+### Web Path — Verification
+
+The web flow is unchanged:
+
+1. `isWeb()` → `createStockfishBridge()` → `new StockfishBridgeWeb()`
+2. `bridge.onOutput(handleMessage)` — registers the message handler
+3. `bridge.launch()` → `new Worker('/stockfish-18-lite-single.js')` → sets `worker.onmessage` → resolves
+4. `bridge.sendCommand('uci')` + `bridge.sendCommand('isready')` → `worker.postMessage(...)`
+5. Worker emits `'readyok'` → `worker.onmessage` fires → `outputHandler(line)` → `handleMessage('readyok')` → `onStatus('ready')`
+6. `analyzePosition(fen, depth, multiPv)` → 150ms debounce → `bridge.sendCommand('stop')` if searching → `pendingSearch` set → `bridge.sendCommand('isready')`
+7. `'readyok'` → `bridge.sendCommand('setoption ...')` if needed → `bridge.sendCommand('position fen ...')` → `bridge.sendCommand('go depth ...')`
+8. `'info depth ...'` lines → `parseUciLine` → `onOutput` → Zustand `_receiveEngineOutput`
+9. `'bestmove ...'` → `onOutput` → Zustand → `onStatus('ready')`
+
+All unchanged from the pre-refactor web path. PASS.
+
+### Limitations
+
+- **iOS is unsupported** — `react-native-stockfish-chess-engine` v0.1.5 is explicitly Android-only (no podspec implementation, README says "Android only"). The `EngineController` sets `engineStatus = 'unsupported'` on iOS, which hides the eval bar and disables the analysis toggle — exactly the same behaviour as before.
+- **Expo managed workflow** — `react-native-stockfish-chess-engine` requires a custom native build (EAS Build or `npx expo run:android`). It will not work in Expo Go.
+- **Peer dependency conflict** — installed with `--legacy-peer-deps` due to `react-native-reanimated@4.2.3` requiring `react-native@0.80-0.84` while this project uses `react-native@0.79.5`. This is a pre-existing version lock in the project; the new packages themselves do not introduce it.
+- **WASM file** — `public/stockfish-18-lite-single.wasm` must still be present locally for the web path (gitignored, copy from `node_modules/stockfish/bin/` if missing).
