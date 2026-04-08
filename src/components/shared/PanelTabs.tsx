@@ -9,18 +9,21 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import NotationPanel from '../notation/NotationPanel';
 import ExplorerPanel from '../explorer/ExplorerPanel';
+import EnginePanel from '../engine/EnginePanel';
 import ErrorBoundary from './ErrorBoundary';
 import { useChessStore } from '../../store';
 
-type Tab = 'notation' | 'explorer';
+type Tab = 'notation' | 'explorer' | 'engine';
 
 export default function PanelTabs() {
   const [activeTab, setActiveTab] = useState<Tab>('notation');
   const explorerData = useChessStore((s) => s.explorerData);
   const explorerLoading = useChessStore((s) => s.explorerLoading);
+  const isAnalysing = useChessStore((s) => s.isAnalysing);
+  const engineOutput = useChessStore((s) => s.engineOutput);
 
-  // Show a subtle dot on the Explorer tab when data is available
   const explorerHasData = explorerData !== null && explorerData.moves.length > 0;
+  const engineHasData = engineOutput !== null && (engineOutput.multipv.length > 0 || engineOutput.pv !== null);
 
   return (
     <View style={styles.wrapper}>
@@ -37,6 +40,12 @@ export default function PanelTabs() {
           onPress={() => setActiveTab('explorer')}
           badge={explorerHasData && activeTab !== 'explorer'}
         />
+        <TabButton
+          label={isAnalysing ? 'Engine ·' : 'Engine'}
+          active={activeTab === 'engine'}
+          onPress={() => setActiveTab('engine')}
+          badge={engineHasData && activeTab !== 'engine'}
+        />
       </View>
 
       {/* Panel content */}
@@ -45,9 +54,13 @@ export default function PanelTabs() {
           <ErrorBoundary label="Notation">
             <NotationPanel />
           </ErrorBoundary>
-        ) : (
+        ) : activeTab === 'explorer' ? (
           <ErrorBoundary label="Explorer">
             <ExplorerPanel />
+          </ErrorBoundary>
+        ) : (
+          <ErrorBoundary label="Engine">
+            <EnginePanel />
           </ErrorBoundary>
         )}
       </View>

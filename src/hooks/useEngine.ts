@@ -37,7 +37,8 @@ export function useEngine(): void {
     const unsubscribeFen = useChessStore.subscribe(
       (state) => state.currentFen,
       (fen) => {
-        const { isAnalysing, targetDepth, multiPvCount } = useChessStore.getState();
+        const { isAnalysing, targetDepth, multiPvCount, clearEngineOutput } = useChessStore.getState();
+        clearEngineOutput(); // clear stale lines when position changes
         if (isAnalysing && controllerRef.current) {
           controllerRef.current.analyzePosition(fen, targetDepth, multiPvCount);
         }
@@ -57,9 +58,37 @@ export function useEngine(): void {
       }
     );
 
+    // Restart analysis when multiPvCount changes so Stockfish uses the new multipv value
+    const unsubscribeMultiPv = useChessStore.subscribe(
+      (state) => state.multiPvCount,
+      (multiPvCount) => {
+        const { isAnalysing, currentFen, targetDepth, clearEngineOutput } = useChessStore.getState();
+        if (isAnalysing && controllerRef.current) {
+          clearEngineOutput();
+          controllerRef.current.analyzePosition(currentFen, targetDepth, multiPvCount);
+        }
+      }
+    );
+
+    // Resume analysis after auto-restart (worker crashed and re-initialized).
+    // Only react to loading→ready (post-reinit), NOT analyzing→ready (normal completion).
+    const unsubscribeStatus = useChessStore.subscribe(
+      (state) => state.engineStatus,
+      (status, prevStatus) => {
+        if (status === 'ready' && prevStatus === 'loading') {
+          const { isAnalysing, currentFen, targetDepth, multiPvCount } = useChessStore.getState();
+          if (isAnalysing && controllerRef.current) {
+            controllerRef.current.analyzePosition(currentFen, targetDepth, multiPvCount);
+          }
+        }
+      }
+    );
+
     return () => {
       unsubscribeFen();
       unsubscribeAnalysing();
+      unsubscribeMultiPv();
+      unsubscribeStatus();
     };
   }, []);
 }

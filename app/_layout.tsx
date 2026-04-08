@@ -4,6 +4,15 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useEngine } from '../src/hooks/useEngine';
 import { useExplorer } from '../src/hooks/useExplorer';
 
+// Register the PWA service worker on web
+if (Platform.OS === 'web' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch((err) => {
+      console.warn('[SW] registration failed:', err);
+    });
+  });
+}
+
 function RootLayoutInner() {
   // Both hooks subscribe to currentFen via subscribeWithSelector — no re-renders here.
   useEngine();

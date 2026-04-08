@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useChessStore } from '../../src/store';
@@ -59,7 +60,7 @@ function EngineSection() {
 
       <Row label="Lines (MultiPV)">
         <View style={styles.segmentGroup}>
-          {[1, 2, 3].map((n) => (
+          {[1, 2, 3, 4].map((n) => (
             <Pressable
               key={n}
               style={[styles.segment, multiPvCount === n && styles.segmentActive]}
@@ -135,6 +136,8 @@ function BoardSection() {
 function ExplorerSection() {
   const explorerEnabled = useChessStore((s) => s.explorerEnabled);
   const toggleExplorer = useChessStore((s) => s.toggleExplorer);
+  const lichessToken = useChessStore((s) => s.lichessToken);
+  const setLichessToken = useChessStore((s) => s.setLichessToken);
 
   return (
     <Section title="Opening Explorer">
@@ -146,9 +149,21 @@ function ExplorerSection() {
           thumbColor={explorerEnabled ? '#a8b4ff' : '#666'}
         />
       </Row>
+      <View style={styles.tokenRow}>
+        <Text style={styles.rowLabel}>Lichess API token</Text>
+        <TextInput
+          style={styles.tokenInput}
+          value={lichessToken}
+          onChangeText={setLichessToken}
+          placeholder="lip_xxxxxxxxxxxx"
+          placeholderTextColor="#444"
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+      </View>
       <Text style={styles.hintText}>
-        Fetches move frequency and win rates from the Lichess Masters database.
-        Requires an internet connection.
+        Required for the Masters database. Create a token at lichess.org/account/oauth/token (no scopes needed).
       </Text>
     </Section>
   );
@@ -405,6 +420,27 @@ const styles = StyleSheet.create({
   },
   actionBtnTextDisabled: {
     color: '#444',
+  },
+
+  // Token input
+  tokenRow: {
+    flexDirection: 'column',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#2d2d4e',
+  },
+  tokenInput: {
+    backgroundColor: '#0e0e22',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2d2d4e',
+    color: '#c0c0e0',
+    fontSize: 13,
+    fontFamily: 'monospace',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
 
   // Text

@@ -41,13 +41,16 @@ export interface LichessExplorerResponse {
 
 export async function fetchExplorerData(
   fen: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  token?: string
 ): Promise<LichessExplorerResponse> {
   const cached = explorerCache.get<LichessExplorerResponse>(fen);
   if (cached) return cached;
 
   const url = `${BASE_URL}?fen=${encodeURIComponent(fen)}&moves=20&topGames=5`;
-  const res = await fetch(url, { signal });
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(url, { signal, headers });
 
   if (!res.ok) {
     throw new Error(`Lichess Explorer HTTP ${res.status}`);

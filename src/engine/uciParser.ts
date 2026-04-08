@@ -66,6 +66,15 @@ function parseInfoLine(line: string): Partial<EngineOutput> {
     }
   }
 
+  // Attach score and depth to the pv line so each multipv line carries its own eval
+  if (result.pv) {
+    result.pv = {
+      ...result.pv,
+      score: result.score ?? null,
+      depth: result.depth,
+    };
+  }
+
   return result;
 }
 

@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.claudecodechess.app"
+      "bundleIdentifier": "com.claudecodechess.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +35,13 @@
     "plugins": [
       "expo-router",
       "expo-dev-client"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "23fe38f8-20ab-4628-b5bb-fb820a368ec8"
+      }
+    },
+    "owner": "grindpad"
   }
 }

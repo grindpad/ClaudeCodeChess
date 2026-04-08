@@ -11,6 +11,15 @@ export interface PvLine {
   moves: string[];
   /** SAN equivalents computed after receiving the PV (filled in by EngineController) */
   san: string[];
+  /** Score for this specific line (from White's perspective via formatScore) */
+  score?: {
+    type: 'cp' | 'mate';
+    value: number;
+    isUpperBound: boolean;
+    isLowerBound: boolean;
+  } | null;
+  /** Depth at which this line was computed */
+  depth?: number;
 }
 
 export interface EngineOutput {
