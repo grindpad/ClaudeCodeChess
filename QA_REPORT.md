@@ -427,3 +427,65 @@ All unchanged from the pre-refactor web path. PASS.
 - **Expo managed workflow** — `react-native-stockfish-chess-engine` requires a custom native build (EAS Build or `npx expo run:android`). It will not work in Expo Go.
 - **Peer dependency conflict** — installed with `--legacy-peer-deps` due to `react-native-reanimated@4.2.3` requiring `react-native@0.80-0.84` while this project uses `react-native@0.79.5`. This is a pre-existing version lock in the project; the new packages themselves do not introduce it.
 - **WASM file** — `public/stockfish-18-lite-single.wasm` must still be present locally for the web path (gitignored, copy from `node_modules/stockfish/bin/` if missing).
+
+---
+
+## Engine — iOS WebView Bridge (2026-04-08)
+
+### Why WebView bridge instead of a native module
+
+`react-native-stockfish-chess-engine` is explicitly Android-only (no iOS podspec). The next best native option would be a custom Swift/Objective-C module wrapping Stockfish compiled for ARM64 — that requires significant native work and a full EAS Build cycle for every Stockfish update.
+
+The WebView bridge approach reuses the existing `stockfish-18-lite-single.js` WASM binary that already runs correctly in the web browser path. A hidden `react-native-webview` instance provides a WKWebView context where Web Workers (backed by JavaScriptCore + WASM) are fully supported on iOS 14+. The bridge costs zero native code and zero additional Stockfish compilation.
+
+### Architecture
+
+```
+EngineController
+  └── StockfishBridgeIOS (singleton, shared between factory and root layout)
+        ├── webViewRef.current → hidden <WebView> mounted in RootLayoutInner
+        │     source: { html: STOCKFISH_WEBVIEW_HTML, baseUrl: 'http://localhost:8081' }
+        │     style:  { width: 0, height: 0, position: 'absolute' }
+        │
+        ├── sendCommand(cmd)
+        │     → webViewRef.current.injectJavaScript('handleCommand(...); true;')
+        │     → handleCommand() in WebView page → worker.postMessage(cmd)
+        │
+        └── onMessage (WebView prop)
+              ← worker.onmessage → window.ReactNativeWebView.postMessage(line)
+              → outputHandler(line) → EngineController.handleMessage(line)
+```
+
+**Singleton pattern:** `getIOSBridge()` in `StockfishBridgeFactory.ts` returns the same `StockfishBridgeIOS` instance each time. The root layout calls `getIOSBridge().getWebViewProps()` to get the ref/source/handlers to mount on the `<WebView>`, and `createStockfishBridge()` (called by `EngineController`) also calls `getIOSBridge()` — both get the same object with the same `webViewRef`.
+
+**Timing:** The `<WebView>` is rendered before `useEngine()` runs (both are in `RootLayoutInner`). By the time `EngineController.initialize()` calls `bridge.launch()`, the WebView has already loaded the HTML page and the worker is initialising. `launch()` resolves immediately; the UCI `isready` / `readyok` handshake that `EngineController` sends immediately after handles actual readiness signalling — same as the web path.
+
+**baseUrl:** The WebView source is `{ html: htmlString, baseUrl: 'http://localhost:8081' }`. With this baseUrl, `new Worker('/stockfish-18-lite-single.js')` inside the page resolves to `http://localhost:8081/stockfish-18-lite-single.js` — the Metro dev server, which already serves files from `public/`.
+
+### Files Created / Modified
+
+| File | Change |
+|------|--------|
+| `src/engine/stockfishWebviewHtml.ts` | New — HTML string with worker init + bidirectional message proxy |
+| `src/engine/StockfishBridgeIOS.ts` | New — `StockfishBridge` implementation using hidden WebView |
+| `src/engine/StockfishBridgeFactory.ts` | Updated — added `getIOSBridge()` singleton getter; routes `Platform.OS === 'ios'` to `StockfishBridgeIOS` |
+| `src/engine/EngineController.ts` | Updated — removed `isIOS()` early-return so iOS now proceeds to `createStockfishBridge()`; removed `isIOS` import |
+| `app/_layout.tsx` | Updated — mounts hidden `<WebView>` in `RootLayoutInner` for iOS only (via `require()` inside `Platform.OS === 'ios'` branch) |
+| `app.json` | Updated — removed `react-native-stockfish-chess-engine` from plugins (no config plugin; was causing build failures on iOS) |
+
+### What to test on device (iOS EAS Dev Build)
+
+- [ ] **Engine loads:** After app launch, eval bar appears and engine status reaches `ready` within ~3 seconds.
+- [ ] **Analysis starts:** Enable engine toggle; `go depth 20` analysis begins and `info` lines stream in.
+- [ ] **Evaluation bar updates:** Bar moves as depth increases; score sign flips correctly when black is to move.
+- [ ] **Navigation:** Stepping forward/backward through moves stops and restarts analysis on each new FEN.
+- [ ] **MultiPV:** Setting MultiPV to 3 in settings shows 3 PV lines in the engine panel.
+- [ ] **No layout impact:** The hidden WebView is invisible (0×0, absolute) and does not push any other content.
+- [ ] **Web unaffected:** `npx expo start --web` still uses `StockfishBridgeWeb` (Web Worker); no regression.
+- [ ] **Android unaffected:** Android still routes to `StockfishBridgeNative`.
+
+### Limitations / Known Issues
+
+- **Metro dev server required:** `baseUrl: 'http://localhost:8081'` means the Stockfish JS is fetched from the Metro server. In a production OTA or standalone build the Metro server is not running, so the Worker script URL will fail to load. A production-ready approach would bundle the stockfish JS as a static asset and serve it via a local HTTP server (e.g. `expo-file-system` + a local fetch), or embed the JS inline in the HTML blob. This is a development/EAS Dev Client solution.
+- **Peer dependency conflict** — `react-native-webview` installed with `--legacy-peer-deps` due to the same `react-native-reanimated` version lock described in the previous section.
+- **iOS 14+ required** — WKWebView with Worker support is available from iOS 14. This matches Expo SDK 55's minimum iOS deployment target.

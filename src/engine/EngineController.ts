@@ -13,14 +13,14 @@
  * setoption is sent before the engine has fully processed a stop.
  *
  * Platform branching:
- *   - Web  → StockfishBridgeWeb  (Web Worker, requires WASM support)
+ *   - Web     → StockfishBridgeWeb    (Web Worker, requires WASM support)
+ *   - iOS     → StockfishBridgeIOS    (hidden WebView bridge)
  *   - Android → StockfishBridgeNative (react-native-stockfish-chess-engine)
- *   - iOS → 'unsupported' (react-native-stockfish-chess-engine is Android-only)
  */
 
 import { Chess } from 'chess.js';
 import { parseUciLine } from './uciParser';
-import { isWasmSupported, isWeb, isIOS } from '../utils/platform';
+import { isWasmSupported, isWeb } from '../utils/platform';
 import { createStockfishBridge } from './StockfishBridgeFactory';
 import { STARTING_FEN } from '../types/moveTree';
 import type { StockfishBridge } from './StockfishBridge';
@@ -57,12 +57,6 @@ export class EngineController {
   }
 
   initialize(): void {
-    // iOS: react-native-stockfish-chess-engine is Android-only
-    if (isIOS()) {
-      this.onStatus('unsupported');
-      return;
-    }
-
     // Web: requires WASM and Worker support
     if (isWeb() && (!isWasmSupported() || typeof Worker === 'undefined')) {
       this.onStatus('unsupported');
