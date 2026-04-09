@@ -10,6 +10,8 @@ export interface EngineSlice {
   targetDepth: number;
   multiPvCount: number;
   engineError: string | null;
+  /** Incrementing counter — useEngine subscribes to it and restarts the controller */
+  engineRestartCount: number;
 
   // ── Public actions ─────────────────────────────────────────────────────────
   startAnalysis: () => void;
@@ -17,6 +19,8 @@ export interface EngineSlice {
   setTargetDepth: (depth: number) => void;
   setMultiPv: (n: number) => void;
   clearEngineOutput: () => void;
+  /** Trigger a full engine worker restart (used by the "stuck" UI button) */
+  requestEngineRestart: () => void;
 
   // ── Internal actions (called by EngineController bridge only) ──────────────
   _receiveEngineOutput: (output: Partial<EngineOutput>) => void;
@@ -31,6 +35,7 @@ export const createEngineSlice: StateCreator<ChessStore, [['zustand/subscribeWit
     targetDepth: 20,
     multiPvCount: 1,
     engineError: null,
+    engineRestartCount: 0,
 
     startAnalysis() {
       set({ isAnalysing: true });
@@ -52,16 +57,18 @@ export const createEngineSlice: StateCreator<ChessStore, [['zustand/subscribeWit
       set({ engineOutput: null });
     },
 
+    requestEngineRestart() {
+      set((s) => ({ engineRestartCount: s.engineRestartCount + 1, engineOutput: null }));
+    },
+
     _receiveEngineOutput(output) {
       const prev = get().engineOutput;
       const multipvLineNum = (output as Record<string, unknown>)._multipvLine as number | undefined;
 
       let newMultipv: import('../../types/engine').PvLine[];
       if (output.pv && multipvLineNum !== undefined && multipvLineNum >= 1) {
-        // Update only the specific multipv slot (1-indexed → 0-indexed)
         const arr = [...(prev?.multipv ?? [])];
         arr[multipvLineNum - 1] = output.pv;
-        // BUG-006 FIX: Filter out undefined slots created by sparse array assignment
         newMultipv = (arr.slice(0, get().multiPvCount) as (import('../../types/engine').PvLine | undefined)[])
           .filter((line): line is import('../../types/engine').PvLine => line !== undefined);
       } else {

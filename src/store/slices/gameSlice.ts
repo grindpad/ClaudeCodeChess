@@ -26,6 +26,7 @@ export interface GameSlice {
   enterVariation: (nodeId: string, variationIndex: number) => void;
   resetToStartPosition: () => void;
   setAnnotation: (nodeId: string, comment: string) => void;
+  newGame: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -299,6 +300,19 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       if (!node) return;
       node.comment = comment; // direct mutation is fine — Zustand tracks by reference
       set({ moveTree: { ...moveTree } }); // trigger re-render
+    },
+
+    newGame() {
+      set({
+        moveTree: null,
+        metadata: null,
+        nodeMap: new Map(),
+        navigationPath: [],
+        currentNode: null,
+        currentFen: STARTING_FEN,
+        explorerData: null,
+        explorerError: null,
+      });
     },
   });
 

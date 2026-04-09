@@ -3,8 +3,12 @@
  *
  * Mount this hook exactly once, in the root layout (_layout.tsx).
  *
- * It subscribes to currentFen via subscribeWithSelector so that FEN changes do NOT
- * trigger a component re-render — only the engine reacts to them.
+ * Subscribes to:
+ *   - currentFen: re-analyzes on position change
+ *   - isAnalysing: start/stop on toggle
+ *   - multiPvCount: restart analysis with new line count
+ *   - engineStatus: resume after auto-restart (loading → ready)
+ *   - engineRestartCount: manual restart requested from UI
  */
 
 import { useEffect, useRef } from 'react';
@@ -17,7 +21,6 @@ export function useEngine(): void {
   const receiveOutput = useChessStore((s) => s._receiveEngineOutput);
   const setStatus = useChessStore((s) => s._setEngineStatus);
 
-  // Initialize the controller once on mount
   useEffect(() => {
     const ctrl = new EngineController(receiveOutput, setStatus);
     ctrl.initialize();
@@ -27,25 +30,21 @@ export function useEngine(): void {
       ctrl.destroy();
       controllerRef.current = null;
     };
-    // receiveOutput and setStatus are stable store references — no need to re-initialize
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Subscribe to FEN changes WITHOUT triggering a re-render of this component.
-  // We also read isAnalysing / targetDepth / multiPvCount at call time via getState().
   useEffect(() => {
     const unsubscribeFen = useChessStore.subscribe(
       (state) => state.currentFen,
       (fen) => {
         const { isAnalysing, targetDepth, multiPvCount, clearEngineOutput } = useChessStore.getState();
-        clearEngineOutput(); // clear stale lines when position changes
+        clearEngineOutput();
         if (isAnalysing && controllerRef.current) {
           controllerRef.current.analyzePosition(fen, targetDepth, multiPvCount);
         }
       }
     );
 
-    // Also subscribe to isAnalysing so toggling analysis starts/stops immediately
     const unsubscribeAnalysing = useChessStore.subscribe(
       (state) => state.isAnalysing,
       (isAnalysing) => {
@@ -58,7 +57,6 @@ export function useEngine(): void {
       }
     );
 
-    // Restart analysis when multiPvCount changes so Stockfish uses the new multipv value
     const unsubscribeMultiPv = useChessStore.subscribe(
       (state) => state.multiPvCount,
       (multiPvCount) => {
@@ -70,8 +68,7 @@ export function useEngine(): void {
       }
     );
 
-    // Resume analysis after auto-restart (worker crashed and re-initialized).
-    // Only react to loading→ready (post-reinit), NOT analyzing→ready (normal completion).
+    // Resume analysis after watchdog-triggered restart (loading → ready transition)
     const unsubscribeStatus = useChessStore.subscribe(
       (state) => state.engineStatus,
       (status, prevStatus) => {
@@ -84,11 +81,32 @@ export function useEngine(): void {
       }
     );
 
+    // Manual restart requested from UI (engineRestartCount incremented)
+    const unsubscribeRestart = useChessStore.subscribe(
+      (state) => state.engineRestartCount,
+      () => {
+        if (!controllerRef.current) return;
+        controllerRef.current.destroy();
+        const ctrl = new EngineController(receiveOutput, setStatus);
+        ctrl.initialize();
+        controllerRef.current = ctrl;
+        // Re-analyze if analysis was active
+        const { isAnalysing, currentFen, targetDepth, multiPvCount } = useChessStore.getState();
+        if (isAnalysing) {
+          setTimeout(() => {
+            controllerRef.current?.analyzePosition(currentFen, targetDepth, multiPvCount);
+          }, 500);
+        }
+      }
+    );
+
     return () => {
       unsubscribeFen();
       unsubscribeAnalysing();
       unsubscribeMultiPv();
       unsubscribeStatus();
+      unsubscribeRestart();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

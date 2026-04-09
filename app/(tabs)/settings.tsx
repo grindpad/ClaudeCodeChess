@@ -1,23 +1,35 @@
 import React from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useChessStore } from '../../src/store';
 import { BOARD_THEMES, type BoardTheme } from '../../src/store/slices/uiSlice';
 import { serializePgn } from '../../src/pgn/pgnSerializer';
 
 export default function SettingsScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Back button */}
+      <Pressable
+        style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+        onPress={() => router.back()}
+        accessibilityLabel="Back"
+      >
+        <Text style={styles.backBtnText}>{'‹ Back'}</Text>
+      </Pressable>
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.screenTitle}>Settings</Text>
 
@@ -163,7 +175,7 @@ function ExplorerSection() {
         />
       </View>
       <Text style={styles.hintText}>
-        Required for the Masters database. Create a token at lichess.org/account/oauth/token (no scopes needed).
+        Optional. The Masters database works without a token. A token may help if you hit rate limits. Create one at lichess.org/account/oauth/token (no scopes needed).
       </Text>
     </Section>
   );
@@ -181,10 +193,35 @@ function GameSection() {
       return;
     }
     const pgn = serializePgn(moveTree, metadata);
-    try {
-      await Share.share({ message: pgn, title: 'Game PGN' });
-    } catch {
-      // Share sheet dismissed — no-op
+    const filename = `${metadata?.White ?? 'game'}_vs_${metadata?.Black ?? 'opponent'}.pgn`
+      .replace(/[^\w._-]/g, '_');
+
+    if (Platform.OS === 'web') {
+      // Try Web Share API with File object (mobile browsers)
+      const file = new File([pgn], filename, { type: 'application/x-chess-pgn' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: filename });
+          return;
+        } catch {
+          // Dismissed or failed — fall through to blob download
+        }
+      }
+      // Blob download fallback (desktop browsers)
+      const url = URL.createObjectURL(new Blob([pgn], { type: 'application/x-chess-pgn' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      // Native: text share sheet
+      try {
+        const { Share } = await import('react-native');
+        await Share.share({ message: pgn, title: filename });
+      } catch {
+        // Dismissed — no-op
+      }
     }
   };
 
@@ -254,6 +291,19 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  backBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignSelf: 'flex-start',
+  },
+  backBtnPressed: {
+    opacity: 0.6,
+  },
+  backBtnText: {
+    color: '#a8b4ff',
+    fontSize: 17,
+    fontWeight: '500',
   },
   scroll: {
     flex: 1,

@@ -39,6 +39,7 @@ export interface UiSlice {
   boardTheme: BoardTheme;
   showCoordinates: boolean;
   lichessToken: string;
+  sidebarOpen: boolean;
 
   // ── Actions ────────────────────────────────────────────────────────────────
   toggleNotationPanel: () => void;
@@ -53,6 +54,8 @@ export interface UiSlice {
   setBoardTheme: (theme: BoardTheme) => void;
   toggleCoordinates: () => void;
   setLichessToken: (token: string) => void;
+  openSidebar: () => void;
+  closeSidebar: () => void;
 }
 
 export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], UiSlice> =
@@ -67,6 +70,7 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
     boardTheme: 'classic',
     showCoordinates: true,
     lichessToken: (typeof window !== 'undefined' ? window.localStorage?.getItem('lichessToken') ?? '' : ''),
+    sidebarOpen: false,
 
     toggleNotationPanel() { set((s) => ({ notationPanelVisible: !s.notationPanelVisible })); },
     toggleExplorerPanel() { set((s) => ({ explorerPanelVisible: !s.explorerPanelVisible })); },
@@ -83,4 +87,6 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
       set({ lichessToken: token });
       if (typeof window !== 'undefined') window.localStorage?.setItem('lichessToken', token);
     },
+    openSidebar() { set({ sidebarOpen: true }); },
+    closeSidebar() { set({ sidebarOpen: false }); },
   });

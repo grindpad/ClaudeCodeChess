@@ -1,12 +1,15 @@
 /**
- * Two-tab panel area: "Notation" and "Explorer".
- * Tab state is stored in the Zustand UI slice (notationPanelVisible /
- * explorerPanelVisible) but here we manage local active tab for simplicity,
- * since only one can be active at a time.
+ * PanelTabs — B6: horizontally swipeable tab panels.
+ *
+ * Swipe left  → next tab (Notation → Explorer → Engine)
+ * Swipe right → prev tab
+ *
+ * Uses PanResponder so the gesture only fires when horizontal movement is
+ * dominant, avoiding conflicts with vertical scrolling inside each panel.
  */
 
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import NotationPanel from '../notation/NotationPanel';
 import ExplorerPanel from '../explorer/ExplorerPanel';
 import EnginePanel from '../engine/EnginePanel';
@@ -14,6 +17,12 @@ import ErrorBoundary from './ErrorBoundary';
 import { useChessStore } from '../../store';
 
 type Tab = 'notation' | 'explorer' | 'engine';
+const TABS: Tab[] = ['notation', 'explorer', 'engine'];
+const TAB_LABELS: Record<Tab, string> = {
+  notation: 'Notation',
+  explorer: 'Explorer',
+  engine: 'Engine',
+};
 
 export default function PanelTabs() {
   const [activeTab, setActiveTab] = useState<Tab>('notation');
@@ -25,27 +34,46 @@ export default function PanelTabs() {
   const explorerHasData = explorerData !== null && explorerData.moves.length > 0;
   const engineHasData = engineOutput !== null && (engineOutput.multipv.length > 0 || engineOutput.pv !== null);
 
+  const panRef = useRef(
+    PanResponder.create({
+      // Don't claim the gesture on start — let ScrollView children respond to vertical swipes
+      onStartShouldSetPanResponder: () => false,
+      // Claim if clearly horizontal (dx > dy by a clear margin)
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12,
+      onPanResponderRelease: (_, { dx }) => {
+        setActiveTab((current) => {
+          const idx = TABS.indexOf(current);
+          if (dx < -40 && idx < TABS.length - 1) return TABS[idx + 1];
+          if (dx > 40 && idx > 0) return TABS[idx - 1];
+          return current;
+        });
+      },
+    })
+  ).current;
+
+  const getTabLabel = (tab: Tab): string => {
+    if (tab === 'explorer' && explorerLoading) return 'Explorer ·';
+    if (tab === 'engine' && isAnalysing) return 'Engine ·';
+    return TAB_LABELS[tab];
+  };
+
   return (
-    <View style={styles.wrapper}>
+    <View style={styles.wrapper} {...panRef.panHandlers}>
       {/* Tab bar */}
       <View style={styles.tabBar}>
-        <TabButton
-          label="Notation"
-          active={activeTab === 'notation'}
-          onPress={() => setActiveTab('notation')}
-        />
-        <TabButton
-          label={explorerLoading ? 'Explorer ·' : 'Explorer'}
-          active={activeTab === 'explorer'}
-          onPress={() => setActiveTab('explorer')}
-          badge={explorerHasData && activeTab !== 'explorer'}
-        />
-        <TabButton
-          label={isAnalysing ? 'Engine ·' : 'Engine'}
-          active={activeTab === 'engine'}
-          onPress={() => setActiveTab('engine')}
-          badge={engineHasData && activeTab !== 'engine'}
-        />
+        {TABS.map((tab) => (
+          <TabButton
+            key={tab}
+            label={getTabLabel(tab)}
+            active={activeTab === tab}
+            onPress={() => setActiveTab(tab)}
+            badge={
+              (tab === 'explorer' && explorerHasData && activeTab !== tab) ||
+              (tab === 'engine' && engineHasData && activeTab !== tab)
+            }
+          />
+        ))}
       </View>
 
       {/* Panel content */}
@@ -109,10 +137,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     gap: 6,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
+    minHeight: 44,
   },
   tabActive: {
     borderBottomColor: '#7986cb',

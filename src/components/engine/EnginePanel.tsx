@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useChessStore } from '../../store';
 import { formatScore } from '../../engine/uciParser';
-import { fenToTurn } from '../../utils/fenUtils';
+import { fenToTurn, fenToFullMove } from '../../utils/fenUtils';
 import type { PvLine } from '../../types/engine';
 
 export default function EnginePanel() {
@@ -16,13 +16,16 @@ export default function EnginePanel() {
   const stopAnalysis = useChessStore((s) => s.stopAnalysis);
   const makeMove = useChessStore((s) => s.makeMove);
   const currentFen = useChessStore((s) => s.currentFen);
+  const requestEngineRestart = useChessStore((s) => s.requestEngineRestart);
 
   const isUnsupported = engineStatus === 'unsupported';
   const isLoading = engineStatus === 'loading' || engineStatus === 'idle';
+  const isStuck = isAnalysing && engineStatus === 'analyzing' &&
+    (!engineOutput || engineOutput.depth === 0);
   const sideToMove = fenToTurn(currentFen);
+  const fullMove = fenToFullMove(currentFen);
   const depth = engineOutput?.depth ?? 0;
 
-  // Collect lines: multipv array when available, else single pv
   const lines: PvLine[] = engineOutput?.multipv?.length
     ? engineOutput.multipv.slice(0, multiPvCount)
     : engineOutput?.pv
@@ -50,7 +53,6 @@ export default function EnginePanel() {
     <View style={styles.container}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        {/* Analyse / Stop toggle */}
         <Pressable
           style={({ pressed }) => [
             styles.toggleBtn,
@@ -65,12 +67,10 @@ export default function EnginePanel() {
           </Text>
         </Pressable>
 
-        {/* Depth badge */}
         <View style={styles.depthBadge}>
           <Text style={styles.depthText}>d{depth > 0 ? depth : targetDepth}</Text>
         </View>
 
-        {/* MultiPV +/- */}
         <View style={styles.multiPvControl}>
           <Pressable
             style={[styles.stepBtn, multiPvCount <= 1 && styles.stepBtnDisabled]}
@@ -95,15 +95,22 @@ export default function EnginePanel() {
       {/* ── PV lines ───────────────────────────────────────────────────────── */}
       <ScrollView style={styles.linesArea} showsVerticalScrollIndicator={false}>
         {lines.length === 0 && (
-          <Text style={styles.hint}>
-            {isAnalysing ? 'Calculating…' : 'Press Analyse to start engine evaluation.'}
-          </Text>
+          // A2 FIX: Tapping "Calculating…" restarts the engine when stuck
+          <Pressable
+            onPress={isStuck ? requestEngineRestart : undefined}
+            style={isStuck ? styles.stuckHint : undefined}
+          >
+            <Text style={[styles.hint, isStuck && styles.stuckHintText]}>
+              {isAnalysing ? (isStuck ? 'Calculating… (tap to restart)' : 'Calculating…') : 'Press Analyse to start engine evaluation.'}
+            </Text>
+          </Pressable>
         )}
         {lines.map((line, idx) => (
           <PvLineRow
             key={idx}
             line={line}
             sideToMove={sideToMove}
+            fullMove={fullMove}
             isTop={idx === 0}
             onPress={() => {
               if (line.moves[0]) makeMove(line.moves[0]);
@@ -127,14 +134,49 @@ export default function EnginePanel() {
 
 // ── PV line row ───────────────────────────────────────────────────────────────
 
+/** A4 FIX: Format SAN moves with proper move numbers */
+function formatMovesWithNumbers(
+  sans: string[],
+  sideToMove: 'w' | 'b',
+  startFullMove: number,
+  maxMoves = 8
+): string {
+  const parts: string[] = [];
+  let moveNum = startFullMove;
+  let isBlackTurn = sideToMove === 'b';
+
+  for (let i = 0; i < sans.length && i < maxMoves; i++) {
+    if (!isBlackTurn) {
+      // White's move — always show number
+      parts.push(`${moveNum}.`);
+    } else if (i === 0) {
+      // First move is black — show number with ellipsis
+      parts.push(`${moveNum}…`);
+    }
+    parts.push(sans[i]);
+
+    if (isBlackTurn) {
+      moveNum++;
+      isBlackTurn = false;
+    } else {
+      isBlackTurn = true;
+    }
+  }
+
+  const hasMore = sans.length > maxMoves;
+  return parts.join(' ') + (hasMore ? '…' : '');
+}
+
 function PvLineRow({
   line,
   sideToMove,
+  fullMove,
   isTop,
   onPress,
 }: {
   line: PvLine;
   sideToMove: 'w' | 'b';
+  fullMove: number;
   isTop: boolean;
   onPress: () => void;
 }) {
@@ -143,9 +185,7 @@ function PvLineRow({
   const isPositive = scoreText.startsWith('+') || /^M\d/.test(scoreText);
   const isNegative = scoreText.startsWith('-');
 
-  const sanMoves = line.san.slice(0, 8);
-  const hasMore = line.san.length > 8;
-  const movesText = sanMoves.join(' ') + (hasMore ? '…' : '');
+  const movesText = formatMovesWithNumbers(line.san, sideToMove, fullMove);
 
   return (
     <Pressable
@@ -188,7 +228,6 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,7 +299,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Lines
   linesArea: {
     flex: 1,
   },
@@ -299,7 +337,6 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
 
-  // Status
   statusBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -319,5 +356,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     padding: 16,
     textAlign: 'center',
+  },
+  stuckHint: {
+    // Tappable area for restart
+  },
+  stuckHintText: {
+    color: '#7986cb',
   },
 });

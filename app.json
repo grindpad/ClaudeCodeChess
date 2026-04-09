@@ -3,7 +3,7 @@
     "name": "ClaudeCodeChess",
     "slug": "claude-code-chess",
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

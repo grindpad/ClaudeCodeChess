@@ -9,13 +9,10 @@
  *   5. position fen X
  *   6. go depth N
  *
- * Moving setoption to after readyok is critical: the WASM build crashes when
- * setoption is sent before the engine has fully processed a stop.
- *
- * Platform branching:
- *   - Web     → StockfishBridgeWeb    (Web Worker, requires WASM support)
- *   - iOS     → StockfishBridgeIOS    (hidden WebView bridge)
- *   - Android → StockfishBridgeNative (react-native-stockfish-chess-engine)
+ * A2 FIX — Watchdog timer:
+ *   If no engine output is received within WATCHDOG_MS after starting analysis,
+ *   the bridge is shut down and re-initialized automatically. This handles the
+ *   case where the WASM worker silently crashes or becomes unresponsive on iOS Safari.
  */
 
 import { Chess } from 'chess.js';
@@ -35,20 +32,18 @@ interface PendingSearch {
   multiPv: number;
 }
 
+const WATCHDOG_MS = 8000;
+
 export class EngineController {
   private bridge: StockfishBridge | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly onOutput: OutputFn;
   private readonly onStatus: StatusFn;
   private readonly debounceMs = 150;
   private analysisFen: string = STARTING_FEN;
   private isSearching = false;
   private currentMultiPv = 1;
-  /**
-   * Set in the debounce timer; consumed in the readyok handler.
-   * Ensures position+go (and setoption) are only sent after the engine confirms
-   * it is fully settled via readyok.
-   */
   private pendingSearch: PendingSearch | null = null;
 
   constructor(onOutput: OutputFn, onStatus: StatusFn) {
@@ -57,7 +52,6 @@ export class EngineController {
   }
 
   initialize(): void {
-    // Web: requires WASM and Worker support
     if (isWeb() && (!isWasmSupported() || typeof Worker === 'undefined')) {
       this.onStatus('unsupported');
       return;
@@ -70,17 +64,17 @@ export class EngineController {
       bridge.onOutput(this.handleMessage.bind(this));
 
       bridge.launch().then(() => {
-        // launch() resolves once the worker/process is started.
-        // Send initial UCI handshake.
         bridge.sendCommand('uci');
         bridge.sendCommand('isready');
+        // Start watchdog for initial readyok
+        this.startWatchdog();
       }).catch((err) => {
         console.error('[EngineController] bridge launch failed:', err);
         this.isSearching = false;
         this.pendingSearch = null;
         this.currentMultiPv = 1;
+        this.clearWatchdog();
         this.onStatus('error');
-        // Schedule a restart after a short delay (mirrors the old worker onerror path)
         setTimeout(() => {
           this.bridge?.shutdown();
           this.bridge = null;
@@ -95,16 +89,43 @@ export class EngineController {
     }
   }
 
+  // ── Watchdog ─────────────────────────────────────────────────────────────────
+
+  private startWatchdog(): void {
+    this.clearWatchdog();
+    this.watchdogTimer = setTimeout(() => {
+      console.warn('[EngineController] Watchdog: no response in', WATCHDOG_MS, 'ms — restarting');
+      // Save current search intent so it fires after re-init
+      const savedSearch = this.pendingSearch ??
+        (this.isSearching ? { fen: this.analysisFen, depth: 20, multiPv: this.currentMultiPv } : null);
+      this.bridge?.shutdown();
+      this.bridge = null;
+      this.isSearching = false;
+      this.currentMultiPv = 1;
+      this.pendingSearch = savedSearch;
+      this.onStatus('loading');
+      this.initialize();
+    }, WATCHDOG_MS);
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  // ── Message handler ───────────────────────────────────────────────────────────
+
   private handleMessage(line: string): void {
     if (!line) return;
 
     if (line === 'readyok') {
+      this.clearWatchdog();
       if (this.pendingSearch) {
-        // Engine is fully settled — now safe to change options and start search
         const { fen, depth, multiPv } = this.pendingSearch;
         this.pendingSearch = null;
 
-        // setoption AFTER readyok: engine is idle and settled, safest moment
         if (multiPv !== this.currentMultiPv) {
           this.bridge!.sendCommand(`setoption name MultiPV value ${multiPv}`);
           this.currentMultiPv = multiPv;
@@ -113,9 +134,10 @@ export class EngineController {
         this.bridge!.sendCommand(`position fen ${fen}`);
         this.bridge!.sendCommand(`go depth ${depth}`);
         this.isSearching = true;
+        // Restart watchdog for the analysis phase
+        this.startWatchdog();
         this.onStatus('analyzing');
       } else {
-        // Initial handshake, or readyok after a cancelled search
         this.onStatus('ready');
       }
       return;
@@ -128,13 +150,14 @@ export class EngineController {
 
     if (line.startsWith('bestmove')) {
       this.isSearching = false;
+      this.clearWatchdog();
       this.onOutput(parsed);
-      // Don't report 'ready' if we are already mid-cycle for a new search:
-      // the readyok for that search will call onStatus('analyzing') instead.
       if (!this.pendingSearch) {
         this.onStatus('ready');
       }
     } else if (line.startsWith('info') && parsed.score !== undefined) {
+      // Reset watchdog on each info line — engine is alive
+      this.startWatchdog();
       if (parsed.pv && parsed.pv.moves.length > 0) {
         parsed.pv = { ...parsed.pv, san: this.computeSan(parsed.pv.moves) };
       }
@@ -158,6 +181,8 @@ export class EngineController {
     }
   }
 
+  // ── Public API ────────────────────────────────────────────────────────────────
+
   analyzePosition(fen: string, depth: number, multiPv: number): void {
     this.analysisFen = fen;
     if (!this.bridge) return;
@@ -175,9 +200,10 @@ export class EngineController {
         this.isSearching = false;
       }
 
-      // Store params; setoption + position + go are sent only after readyok
       this.pendingSearch = { fen, depth, multiPv };
       this.bridge.sendCommand('isready');
+      // Start watchdog waiting for readyok
+      this.startWatchdog();
     }, this.debounceMs);
   }
 
@@ -187,6 +213,7 @@ export class EngineController {
       this.pendingTimer = null;
     }
     this.pendingSearch = null;
+    this.clearWatchdog();
     if (this.isSearching) {
       this.bridge?.sendCommand('stop');
       this.isSearching = false;
@@ -195,6 +222,7 @@ export class EngineController {
 
   destroy(): void {
     this.stopAnalysis();
+    this.clearWatchdog();
     this.bridge?.shutdown();
     this.bridge = null;
   }

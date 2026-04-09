@@ -1,73 +1,93 @@
 /**
- * Orchestrates the board + evaluation bar + navigation controls + notation panel.
+ * BoardContainer — portrait-only layout (B4 + D1/D2/D3).
  *
- * Portrait layout:
- *   [EvalBar (horizontal, above board)]
- *   [ChessBoard]
+ *   [12px eval bar] [344pt board + arrow overlay]   ← horizontal row
  *   [NavigationControls]
- *   [NotationPanel (fills remaining space)]
+ *   [PanelTabs — fills remaining space]
  *
- * Landscape layout:
- *   Left column: [EvalBar (vertical)] [ChessBoard] [NavigationControls]
- *   Right column: [NotationPanel]
+ * D3: Downward swipe on the board row (dy ≥ 60, mostly vertical) → flip board.
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import ChessBoardWrapper from './ChessBoardWrapper';
 import EvaluationBar from './EvaluationBar';
+import MoveArrows from './MoveArrows';
 import NavigationControls from './NavigationControls';
 import PanelTabs from '../shared/PanelTabs';
+import { useChessStore } from '../../store';
 
-const EVAL_BAR_THICKNESS = 16;
+const EVAL_BAR_WIDTH = 12;
+const BAR_BOARD_GAP = 4;
+const H_PADDING = 8; // 4px left + 4px right
 
 export default function BoardContainer() {
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
+  const { width } = useWindowDimensions();
+  const boardFlipped = useChessStore((s) => s.boardFlipped);
+  const flipBoard = useChessStore((s) => s.flipBoard);
+  const lastMoveSquares = useChessStore((s) => s.lastMoveSquares);
+  const engineOutput = useChessStore((s) => s.engineOutput);
 
-  // Reserve space for the eval bar beside/above the board
-  const boardSize = isLandscape
-    ? Math.min(height - 80, (width - EVAL_BAR_THICKNESS - 8) * 0.5)
-    : Math.min(width - EVAL_BAR_THICKNESS - 8, height * 0.52);
+  // Snap board size to a multiple of 8 for clean square alignment
+  const boardSize = Math.floor((width - EVAL_BAR_WIDTH - BAR_BOARD_GAP - H_PADDING) / 8) * 8;
 
-  const snappedSize = Math.floor(boardSize / 8) * 8;
+  // Parse engine best move UCI string "e2e4" → [from, to] tuple
+  const bestMoveUci = engineOutput?.bestMove ?? null;
+  const engineArrow: [string, string] | null =
+    bestMoveUci && bestMoveUci.length >= 4
+      ? [bestMoveUci.slice(0, 2), bestMoveUci.slice(2, 4)]
+      : null;
 
-  if (isLandscape) {
-    return (
-      <View style={styles.landscapeRow}>
-        {/* Left column: eval bar + board + nav */}
-        <View style={styles.boardColumn}>
-          <View style={styles.boardWithBar}>
-            <EvaluationBar
-              orientation="vertical"
-              size={snappedSize}
-              thickness={EVAL_BAR_THICKNESS}
-            />
-            <ChessBoardWrapper size={snappedSize} />
-          </View>
-          <NavigationControls />
-        </View>
+  // D3: downward-swipe detection for board flip
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const swipeHandled = useRef(false);
 
-        {/* Right column: notation panel */}
-        <View style={styles.notationColumn}>
-          <PanelTabs />
-        </View>
-      </View>
-    );
-  }
+  const handleBoardTouchStart = (e: any) => {
+    touchStartX.current = e.nativeEvent.pageX;
+    touchStartY.current = e.nativeEvent.pageY;
+    swipeHandled.current = false;
+  };
+
+  const handleBoardTouchMove = (e: any) => {
+    if (swipeHandled.current) return;
+    const dy = e.nativeEvent.pageY - touchStartY.current;
+    const dx = Math.abs(e.nativeEvent.pageX - touchStartX.current);
+    if (dy >= 60 && dy > dx * 1.5) {
+      swipeHandled.current = true;
+      flipBoard();
+    }
+  };
 
   return (
-    <View style={styles.portraitColumn}>
-      <View style={styles.boardWithBarHorizontal}>
+    <View style={styles.container}>
+      {/* Board row — eval bar + board with arrow overlay */}
+      <View
+        style={styles.boardRow}
+        onTouchStart={handleBoardTouchStart}
+        onTouchMove={handleBoardTouchMove}
+      >
         <EvaluationBar
-          orientation="horizontal"
-          size={snappedSize}
-          thickness={EVAL_BAR_THICKNESS}
+          orientation="vertical"
+          size={boardSize}
+          thickness={EVAL_BAR_WIDTH}
         />
-        <ChessBoardWrapper size={snappedSize} />
+        <View style={[styles.boardArea, { width: boardSize, height: boardSize }]}>
+          <ChessBoardWrapper size={boardSize} />
+          <MoveArrows
+            boardSize={boardSize}
+            lastMove={lastMoveSquares}
+            engineMove={engineArrow}
+            boardFlipped={boardFlipped}
+          />
+        </View>
       </View>
+
+      {/* Navigation controls */}
       <NavigationControls />
-      <View style={styles.notationArea}>
+
+      {/* Swipeable tab panels */}
+      <View style={styles.panelArea}>
         <PanelTabs />
       </View>
     </View>
@@ -75,37 +95,24 @@ export default function BoardContainer() {
 }
 
 const styles = StyleSheet.create({
-  portraitColumn: {
+  container: {
     flex: 1,
     alignItems: 'center',
   },
-  boardWithBarHorizontal: {
-    alignItems: 'center',
-    gap: 4,
+  boardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: H_PADDING / 2,
+    gap: BAR_BOARD_GAP,
+    paddingTop: 4,
   },
-  notationArea: {
+  boardArea: {
+    position: 'relative',
+  },
+  panelArea: {
     flex: 1,
     width: '100%',
     borderTopWidth: 1,
     borderTopColor: '#2d2d4e',
-  },
-  landscapeRow: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  boardColumn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  boardWithBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  notationColumn: {
-    flex: 1,
-    borderLeftWidth: 1,
-    borderLeftColor: '#2d2d4e',
   },
 });

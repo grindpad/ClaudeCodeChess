@@ -48,11 +48,24 @@ export async function fetchExplorerData(
   if (cached) return cached;
 
   const url = `${BASE_URL}?fen=${encodeURIComponent(fen)}&moves=20&topGames=5`;
+
+  // A1 FIX: Only send token if provided and non-empty. If the token causes a
+  // 401 (invalid/expired), automatically retry the request without auth —
+  // the Masters database is publicly accessible without a token.
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(url, { signal, headers });
 
   if (!res.ok) {
+    // If token caused 401, silently retry without auth
+    if (res.status === 401 && token) {
+      const retryRes = await fetch(url, { signal });
+      if (!retryRes.ok) throw new Error(`Lichess Explorer HTTP ${retryRes.status}`);
+      const retryData = (await retryRes.json()) as LichessExplorerResponse;
+      explorerCache.set(fen, retryData);
+      return retryData;
+    }
     throw new Error(`Lichess Explorer HTTP ${res.status}`);
   }
 

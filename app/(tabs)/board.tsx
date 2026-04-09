@@ -1,13 +1,14 @@
 import { SafeAreaView, StyleSheet } from 'react-native';
 import BoardContainer from '../../src/components/board/BoardContainer';
-import GameHeader from '../../src/components/board/GameHeader';
+import Sidebar from '../../src/components/board/Sidebar';
 import PgnImportModal from '../../src/components/pgn/PgnImportModal';
 
 export default function BoardScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <GameHeader />
-      <BoardContainer />
+      <Sidebar>
+        <BoardContainer />
+      </Sidebar>
       <PgnImportModal />
     </SafeAreaView>
   );
