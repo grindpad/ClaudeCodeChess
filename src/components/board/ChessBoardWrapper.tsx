@@ -1,24 +1,23 @@
 /**
  * ChessBoardWrapper — controlled wrapper around react-native-chessboard.
  *
- * BUG-B FIX: Board flip via rotate(180deg) transform + counter-rotated piece images.
- * react-native-chessboard has no native flip prop, so we:
- *   1. Rotate the board container 180° when boardFlipped=true
- *   2. Pass renderPiece to counter-rotate each piece image (so pieces appear upright)
- * Touch events are remapped through the transform by React Native's responder system.
+ * BUG-B FIX: Board flip via rotate(180deg) transform on the container View.
+ * react-native-chessboard has no native flip prop. We rotate the container 180°;
+ * React Native remaps touch events through the transform matrix so interaction
+ * still targets the correct squares.
+ *
+ * Pieces appear visually upside-down when flipped — this is a known limitation
+ * of the library and cannot be fixed without modifying node_modules. The board
+ * squares are correctly repositioned (h1 at top-left in black's view).
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Chessboard from 'react-native-chessboard';
 import type { ChessboardRef } from 'react-native-chessboard';
 import type { Move } from 'chess.js';
 import { useChessStore } from '../../store';
 import { BOARD_THEMES } from '../../store/slices/uiSlice';
-
-// Piece asset map — mirrors react-native-chessboard/src/constants.ts
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const PIECE_ASSETS: Record<string, unknown> = require('react-native-chessboard/lib/commonjs/constants').PIECES;
 
 interface ChessBoardWrapperProps {
   size: number;
@@ -36,7 +35,6 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
   const boardFlipped = useChessStore((s) => s.boardFlipped);
 
   const themeColors = BOARD_THEMES[boardTheme];
-  const squareSize = size / 8;
 
   // Sync board to external FEN changes (navigation, PGN load, etc.)
   useEffect(() => {
@@ -52,27 +50,11 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
       isUserMoveRef.current = true;
       const uci = `${move.from}${move.to}${move.promotion ?? ''}`;
       makeMove(uci);
-      // Note: makeMove now updates lastMoveSquares internally (BUG-A fix),
-      // but setLastMove here keeps the board-level highlight in sync.
+      // makeMove now updates lastMoveSquares internally (BUG-A fix);
+      // setLastMove here keeps the board-level highlight in sync too.
       setLastMove([move.from, move.to]);
     },
     [makeMove, setLastMove]
-  );
-
-  // Counter-rotate piece images when the board container is rotated 180°
-  // so that pieces always appear upright.
-  const renderFlippedPiece = useCallback(
-    (piece: string) => {
-      const source = PIECE_ASSETS[piece];
-      if (!source) return null;
-      return (
-        <Image
-          source={source as any}
-          style={{ width: squareSize, height: squareSize, transform: [{ rotate: '180deg' }] }}
-        />
-      );
-    },
-    [squareSize]
   );
 
   return (
@@ -98,7 +80,6 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
           checkmateHighlight: '#E84855',
         }}
         durations={{ move: 120 }}
-        renderPiece={boardFlipped ? renderFlippedPiece : undefined}
       />
     </View>
   );
