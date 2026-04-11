@@ -185,7 +185,7 @@ function GameRow({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#111111',
   },
   header: {
     flexDirection: 'row',
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   backBtn: {
     paddingHorizontal: 12,
@@ -204,14 +204,14 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   backBtnText: {
-    color: '#a8b4ff',
+    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '500',
   },
   title: {
     flex: 1,
     textAlign: 'center',
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 17,
     fontWeight: '700',
   },
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rowAnimated: {
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   row: {
     flexDirection: 'row',
@@ -266,14 +266,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowPressed: {
-    backgroundColor: '#1e1e3a',
+    backgroundColor: '#2A2A2A',
   },
   rowMain: {
     flex: 1,
     gap: 2,
   },
   players: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 15,
     fontWeight: '600',
   },
@@ -290,13 +290,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   badge: {
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   badgeImported: {
-    backgroundColor: '#1e3a5f',
+    backgroundColor: '#2A2A2A',
   },
   badgeText: {
     color: '#888',

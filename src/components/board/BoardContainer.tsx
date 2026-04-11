@@ -1,25 +1,26 @@
 /**
- * BoardContainer — portrait-only layout (B4 + D1/D2/D3).
+ * BoardContainer — portrait-only layout (B4 + D1/D2/D3 + STYLE-D).
  *
  *   [12px eval bar] [344pt board + arrow overlay]   ← horizontal row
- *   [NavigationControls]
- *   [PanelTabs — fills remaining space]
+ *   [NavigationControls + panel label]
+ *   [PanelTabs (swipe-only, no tab bar) — fills remaining space]
  *
  * D3: Downward swipe on the board row (dy ≥ 60, mostly vertical) → flip board.
+ * STYLE-D: activePanel state lives here, passed to both NavigationControls and PanelTabs.
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import ChessBoardWrapper from './ChessBoardWrapper';
 import EvaluationBar from './EvaluationBar';
 import MoveArrows from './MoveArrows';
 import NavigationControls from './NavigationControls';
-import PanelTabs from '../shared/PanelTabs';
+import PanelTabs, { type PanelTab } from '../shared/PanelTabs';
 import { useChessStore } from '../../store';
 
 const EVAL_BAR_WIDTH = 12;
 const BAR_BOARD_GAP = 4;
-const H_PADDING = 8; // 4px left + 4px right
+const H_PADDING = 8;
 
 export default function BoardContainer() {
   const { width } = useWindowDimensions();
@@ -28,10 +29,11 @@ export default function BoardContainer() {
   const lastMoveSquares = useChessStore((s) => s.lastMoveSquares);
   const engineOutput = useChessStore((s) => s.engineOutput);
 
-  // Snap board size to a multiple of 8 for clean square alignment
+  // STYLE-D: active panel state lifted here
+  const [activePanel, setActivePanel] = useState<PanelTab>('notation');
+
   const boardSize = Math.floor((width - EVAL_BAR_WIDTH - BAR_BOARD_GAP - H_PADDING) / 8) * 8;
 
-  // Parse engine best move UCI string "e2e4" → [from, to] tuple
   const bestMoveUci = engineOutput?.bestMove ?? null;
   const engineArrow: [string, string] | null =
     bestMoveUci && bestMoveUci.length >= 4
@@ -67,11 +69,7 @@ export default function BoardContainer() {
         onTouchStart={handleBoardTouchStart}
         onTouchMove={handleBoardTouchMove}
       >
-        <EvaluationBar
-          orientation="vertical"
-          size={boardSize}
-          thickness={EVAL_BAR_WIDTH}
-        />
+        <EvaluationBar orientation="vertical" size={boardSize} thickness={EVAL_BAR_WIDTH} />
         <View style={[styles.boardArea, { width: boardSize, height: boardSize }]}>
           <ChessBoardWrapper size={boardSize} />
           <MoveArrows
@@ -83,12 +81,12 @@ export default function BoardContainer() {
         </View>
       </View>
 
-      {/* Navigation controls */}
-      <NavigationControls />
+      {/* Navigation + active panel label */}
+      <NavigationControls activePanel={activePanel} />
 
-      {/* Swipeable tab panels */}
+      {/* Swipeable panels (no tab bar) */}
       <View style={styles.panelArea}>
-        <PanelTabs />
+        <PanelTabs activeTab={activePanel} onTabChange={setActivePanel} />
       </View>
     </View>
   );
@@ -113,6 +111,6 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     borderTopWidth: 1,
-    borderTopColor: '#2d2d4e',
+    borderTopColor: '#2E2E2E',
   },
 });

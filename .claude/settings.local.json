@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-expo-app:*)",
+      "Bash(cp -r \"C:/Users/rolan/OneDrive/Desktop/ChessTemp/assets\" \"C:/Users/rolan/OneDrive/Desktop/ClaudeCodeChess/assets\")",
+      "Bash(cp \"C:/Users/rolan/OneDrive/Desktop/ChessTemp/tsconfig.json\" \"C:/Users/rolan/OneDrive/Desktop/ClaudeCodeChess/tsconfig.json\")",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm show:*)",
+      "Read(//tmp/**)",
+      "Read(//tmp/chess-web-check/_expo/static/js/**)",
+      "Bash(npx expo:*)",
+      "Bash(ls \"C:/Users/rolan/OneDrive/Desktop/ClaudeCodeChess/dist/stockfish\"*)",
+      "Bash(gh repo:*)",
+      "Bash(curl -s \"http://localhost:8081/node_modules/expo-router/entry.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable\")",
+      "Bash(cmd:*)",
+      "Bash(xargs grep:*)",
+      "Bash(curl -s \"http://localhost:8084/node_modules/expo-router/entry.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable\")",
+      "WebSearch",
+      "WebFetch(domain:lichess.org)",
+      "WebFetch(domain:github.com)",
+      "Bash(node scripts/generate-icons.js)",
+      "Bash(grep -r \"html\\\\.tsx\\\\|\\\\\\\\+html\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\expo-router\\\\src\" --include=\"*.ts\" --include=\"*.tsx\" -l)",
+      "Bash(grep -r \"\\\\\\\\+html\\\\|index\\\\.html\\\\|htmlTemplate\\\\|htmlShell\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\@expo\\\\cli\\\\build\" --include=\"*.js\" -l)",
+      "Bash(grep -A5 -B5 \"\\\\\\\\+html\\\\|htmlTemplate\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\@expo\\\\cli\\\\build\\\\src\\\\export\\\\exportApp.js\")",
+      "Bash(grep -rn \"\\\\\\\\+html\\\\|getHtmlTemplate\\\\|htmlShell\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\expo-router\" --include=\"*.js\")",
+      "Bash(grep -rn \"\\\\\\\\+html\\\\|htmlHead\\\\|renderHtml\\\\|getHtml\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\@expo\\\\cli\\\\build\\\\src\" --include=\"*.js\")",
+      "Bash(grep -rn \"\\\\\\\\+html\\\\|htmlHead\\\\|getHtmlTemplate\\\\|HtmlHead\\\\|processHtml\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\@expo\\\\metro-runtime\\\\build\" --include=\"*.js\")",
+      "Bash(grep -n \"\\\\\\\\+html\\\\|renderHtml\\\\|htmlModule\\\\|htmlComponent\\\\|app.*html\" \"C:\\\\Users\\\\rolan\\\\OneDrive\\\\Desktop\\\\ClaudeCodeChess\\\\node_modules\\\\@expo\\\\cli\\\\build\\\\src\\\\export\\\\exportStaticAsync.js\")",
+      "Bash(node:*)",
+      "Bash(xargs cat:*)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('main',''\\), d.get\\('exports',''\\)\\)\")"
+    ]
+  }
+}

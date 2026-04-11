@@ -2,17 +2,21 @@
  * EngineController — owns the Stockfish engine lifecycle via a StockfishBridge.
  *
  * Safe UCI command sequence per search:
- *   1. stop           (only if isSearching)
- *   2. isready        (always — synchronisation point)
+ *   1. stop           (only if isSearching — wait for bestmove before proceeding)
+ *   2. isready        (sent after bestmove confirming stop, or immediately if idle)
  *   3. readyok        (we wait for this before sending any further commands)
- *   4. setoption …    (only if MultiPV changed — after readyok, engine is settled)
+ *   4. setoption …    (only if MultiPV changed — after readyok)
  *   5. position fen X
  *   6. go depth N
  *
- * A2 FIX — Watchdog timer:
- *   If no engine output is received within WATCHDOG_MS after starting analysis,
- *   the bridge is shut down and re-initialized automatically. This handles the
- *   case where the WASM worker silently crashes or becomes unresponsive on iOS Safari.
+ * BUG-E FIX — isStopping flag:
+ *   While stopping (stop sent, bestmove not yet received), queue the next search
+ *   in pendingSearch but do NOT send isready yet. Send isready only after bestmove.
+ *   This prevents double-readyok races that corrupt engine state with MultiPV > 1.
+ *
+ * BUG-E FIX — Watchdog:
+ *   10-second watchdog. Resets on each info line. Clears on bestmove.
+ *   On fire: full worker teardown + reinitialise + retry pending search.
  */
 
 import { Chess } from 'chess.js';
@@ -32,7 +36,7 @@ interface PendingSearch {
   multiPv: number;
 }
 
-const WATCHDOG_MS = 8000;
+const WATCHDOG_MS = 10_000;
 
 export class EngineController {
   private bridge: StockfishBridge | null = null;
@@ -43,6 +47,8 @@ export class EngineController {
   private readonly debounceMs = 150;
   private analysisFen: string = STARTING_FEN;
   private isSearching = false;
+  /** True between sending "stop" and receiving "bestmove". */
+  private isStopping = false;
   private currentMultiPv = 1;
   private pendingSearch: PendingSearch | null = null;
 
@@ -66,11 +72,11 @@ export class EngineController {
       bridge.launch().then(() => {
         bridge.sendCommand('uci');
         bridge.sendCommand('isready');
-        // Start watchdog for initial readyok
         this.startWatchdog();
       }).catch((err) => {
         console.error('[EngineController] bridge launch failed:', err);
         this.isSearching = false;
+        this.isStopping = false;
         this.pendingSearch = null;
         this.currentMultiPv = 1;
         this.clearWatchdog();
@@ -95,12 +101,12 @@ export class EngineController {
     this.clearWatchdog();
     this.watchdogTimer = setTimeout(() => {
       console.warn('[EngineController] Watchdog: no response in', WATCHDOG_MS, 'ms — restarting');
-      // Save current search intent so it fires after re-init
       const savedSearch = this.pendingSearch ??
         (this.isSearching ? { fen: this.analysisFen, depth: 20, multiPv: this.currentMultiPv } : null);
       this.bridge?.shutdown();
       this.bridge = null;
       this.isSearching = false;
+      this.isStopping = false;
       this.currentMultiPv = 1;
       this.pendingSearch = savedSearch;
       this.onStatus('loading');
@@ -134,10 +140,11 @@ export class EngineController {
         this.bridge!.sendCommand(`position fen ${fen}`);
         this.bridge!.sendCommand(`go depth ${depth}`);
         this.isSearching = true;
-        // Restart watchdog for the analysis phase
         this.startWatchdog();
         this.onStatus('analyzing');
-      } else {
+      } else if (!this.isSearching) {
+        // BUG-E FIX: only set ready if we're not already in a search
+        // (guards against stale readyok from a previous stop cycle)
         this.onStatus('ready');
       }
       return;
@@ -150,9 +157,19 @@ export class EngineController {
 
     if (line.startsWith('bestmove')) {
       this.isSearching = false;
+      const wasStopping = this.isStopping;
+      this.isStopping = false;
       this.clearWatchdog();
       this.onOutput(parsed);
-      if (!this.pendingSearch) {
+
+      // BUG-E FIX: now that bestmove is confirmed, send isready for queued search
+      if (this.pendingSearch) {
+        this.bridge?.sendCommand('isready');
+        this.startWatchdog();
+      } else if (!wasStopping) {
+        this.onStatus('ready');
+      } else {
+        // Was stopping without a pending search (user called stopAnalysis)
         this.onStatus('ready');
       }
     } else if (line.startsWith('info') && parsed.score !== undefined) {
@@ -196,14 +213,22 @@ export class EngineController {
       if (!this.bridge) return;
 
       if (this.isSearching) {
+        // BUG-E FIX: send stop, set isStopping, queue search for after bestmove
         this.bridge.sendCommand('stop');
+        this.isStopping = true;
         this.isSearching = false;
+        this.pendingSearch = { fen, depth, multiPv };
+        // startWatchdog for the stop response (bestmove expected)
+        this.startWatchdog();
+      } else if (this.isStopping) {
+        // BUG-E FIX: already stopping, just update the pending search
+        this.pendingSearch = { fen, depth, multiPv };
+      } else {
+        // Ready to go — send isready immediately
+        this.pendingSearch = { fen, depth, multiPv };
+        this.bridge.sendCommand('isready');
+        this.startWatchdog();
       }
-
-      this.pendingSearch = { fen, depth, multiPv };
-      this.bridge.sendCommand('isready');
-      // Start watchdog waiting for readyok
-      this.startWatchdog();
     }, this.debounceMs);
   }
 
@@ -217,12 +242,24 @@ export class EngineController {
     if (this.isSearching) {
       this.bridge?.sendCommand('stop');
       this.isSearching = false;
+      this.isStopping = true;
+      // Watchdog for the stop acknowledgement
+      this.startWatchdog();
     }
   }
 
   destroy(): void {
-    this.stopAnalysis();
+    if (this.pendingTimer) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+    this.pendingSearch = null;
     this.clearWatchdog();
+    if (this.isSearching || this.isStopping) {
+      this.bridge?.sendCommand('stop');
+    }
+    this.isSearching = false;
+    this.isStopping = false;
     this.bridge?.shutdown();
     this.bridge = null;
   }

@@ -132,6 +132,12 @@ function retreatPath(path: NavigationPath): NavigationPath {
   return []; // back to root
 }
 
+/** Extract [from, to] squares from a UCI string for lastMoveSquares. */
+function uciToSquares(uci: string | null | undefined): [string, string] | null {
+  if (!uci || uci.length < 4) return null;
+  return [uci.slice(0, 2), uci.slice(2, 4)];
+}
+
 // ── Slice factory ─────────────────────────────────────────────────────────────
 
 export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], GameSlice> =
@@ -155,9 +161,11 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
           navigationPath: [],
           currentNode: null,
           currentFen: tree.rootFen,
+          lastMoveSquares: null,
           // BUG-003 FIX: Clear stale explorer data from the previous game
           explorerData: null,
           explorerError: null,
+          engineOutput: null,
         });
       } catch (err) {
         console.error('PGN parse error:', err);
@@ -181,10 +189,13 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       const nextIndex = lastSeg ? lastSeg.index + 1 : 0;
       const existingNext = currentLine[nextIndex];
 
+      // BUG-A FIX: lastMoveSquares updated here so explorer/engine moves show the arrow
+      const lastMove: [string, string] = [from, to];
+
       // Check if this move already exists as the next main-line move
       if (existingNext && existingNext.uci === uci) {
         const newPath = advancePath(tree, navigationPath);
-        set({ navigationPath: newPath, currentNode: existingNext, currentFen: existingNext.fen });
+        set({ navigationPath: newPath, currentNode: existingNext, currentFen: existingNext.fen, lastMoveSquares: lastMove });
         return;
       }
 
@@ -198,7 +209,7 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
               : [{ index: 0 }];
             const newPath: NavigationPath = [...nextPath, { variationIndex: vi, index: 0 }];
             const varNode = existingNext.variations[vi][0];
-            set({ navigationPath: newPath, currentNode: varNode, currentFen: varNode.fen });
+            set({ navigationPath: newPath, currentNode: varNode, currentFen: varNode.fen, lastMoveSquares: lastMove });
             return;
           }
         }
@@ -245,6 +256,7 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         navigationPath: newPath,
         currentNode: newNode,
         currentFen: newFen,
+        lastMoveSquares: lastMove,
       });
     },
 
@@ -254,7 +266,8 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       const newPath = advancePath(moveTree, navigationPath);
       if (newPath === navigationPath) return;
       const node = resolveNode(moveTree, newPath);
-      set({ navigationPath: newPath, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen });
+      // BUG-C FIX: sync lastMoveSquares with the node we navigated to
+      set({ navigationPath: newPath, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen, lastMoveSquares: uciToSquares(node?.uci) });
     },
 
     navigateBack() {
@@ -262,14 +275,16 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       if (!moveTree || navigationPath.length === 0) return;
       const newPath = retreatPath(navigationPath);
       const node = resolveNode(moveTree, newPath);
-      set({ navigationPath: newPath, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen });
+      // BUG-C FIX: sync lastMoveSquares with the node we navigated to
+      set({ navigationPath: newPath, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen, lastMoveSquares: uciToSquares(node?.uci) });
     },
 
     navigateToNode(path) {
       const { moveTree } = get();
       if (!moveTree) return;
       const node = resolveNode(moveTree, path);
-      set({ navigationPath: path, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen });
+      // BUG-C FIX: sync lastMoveSquares with the node we navigated to
+      set({ navigationPath: path, currentNode: node, currentFen: node?.fen ?? moveTree.rootFen, lastMoveSquares: uciToSquares(node?.uci) });
     },
 
     enterVariation(nodeId, variationIndex) {
@@ -284,13 +299,14 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
       if (!nodePath) return;
       const newPath: NavigationPath = [...nodePath, { variationIndex, index: 0 }];
       const firstVarNode = variation[0];
-      set({ navigationPath: newPath, currentNode: firstVarNode, currentFen: firstVarNode.fen });
+      set({ navigationPath: newPath, currentNode: firstVarNode, currentFen: firstVarNode.fen, lastMoveSquares: uciToSquares(firstVarNode.uci) });
     },
 
     resetToStartPosition() {
       const { moveTree } = get();
       const rootFen = moveTree?.rootFen ?? STARTING_FEN;
-      set({ navigationPath: [], currentNode: null, currentFen: rootFen });
+      // BUG-C FIX: no last move at root position
+      set({ navigationPath: [], currentNode: null, currentFen: rootFen, lastMoveSquares: null });
     },
 
     setAnnotation(nodeId, comment) {
@@ -303,6 +319,7 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
     },
 
     newGame() {
+      // BUG-G FIX: reset ALL derived state so board, engine, explorer all clear
       set({
         moveTree: null,
         metadata: null,
@@ -310,8 +327,10 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         navigationPath: [],
         currentNode: null,
         currentFen: STARTING_FEN,
+        lastMoveSquares: null,
         explorerData: null,
         explorerError: null,
+        engineOutput: null,
       });
     },
   });

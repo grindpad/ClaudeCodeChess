@@ -62,7 +62,7 @@ export default function NotationPanel() {
 const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   content: {
     padding: 8,
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   emptyText: {
     color: '#555',

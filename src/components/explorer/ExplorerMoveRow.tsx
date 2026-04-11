@@ -85,13 +85,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     gap: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   rowPressed: {
-    backgroundColor: '#1e1e3a',
+    backgroundColor: '#2A2A2A',
   },
   san: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 14,
     fontWeight: '600',
     width: 42,
@@ -100,12 +100,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 10,
     width: 50,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#111111',
     borderRadius: 3,
     overflow: 'hidden',
   },
   freqBar: {
-    backgroundColor: '#5c6bc0',
+    backgroundColor: '#555555',
     borderRadius: 3,
   },
   winRateWrapper: {

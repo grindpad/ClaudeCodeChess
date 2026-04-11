@@ -219,7 +219,7 @@ function PvLineRow({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0e0e1e',
+    backgroundColor: '#111111',
   },
   centered: {
     flex: 1,
@@ -234,23 +234,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
     gap: 8,
   },
   toggleBtn: {
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   toggleBtnActive: {
-    backgroundColor: '#3949ab',
+    backgroundColor: '#3A3A3A',
   },
   toggleBtnPressed: {
-    backgroundColor: '#3d3d6e',
+    backgroundColor: '#3A3A3A',
   },
   toggleText: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -258,13 +258,13 @@ const styles = StyleSheet.create({
     color: '#555',
   },
   depthBadge: {
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
   depthText: {
-    color: '#7986cb',
+    color: '#888888',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   stepBtn: {
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     width: 28,
     height: 28,
     borderRadius: 6,
@@ -286,13 +286,13 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   stepBtnText: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 18,
   },
   multiPvLabel: {
-    color: '#c0c0e0',
+    color: '#C8C8C8',
     fontSize: 12,
     fontWeight: '600',
     minWidth: 42,
@@ -308,14 +308,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1e1e3a',
+    borderBottomColor: '#2A2A2A',
     gap: 10,
   },
   pvRowTop: {
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   pvRowPressed: {
-    backgroundColor: '#1e1e40',
+    backgroundColor: '#2A2A2A',
   },
   score: {
     color: '#888',
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
   },
   moves: {
     flex: 1,
-    color: '#c0c0e0',
+    color: '#C8C8C8',
     fontSize: 13,
     fontFamily: 'monospace',
   },
@@ -344,8 +344,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#2d2d4e',
-    backgroundColor: '#0a0a1a',
+    borderTopColor: '#2E2E2E',
+    backgroundColor: '#111111',
   },
   statusText: {
     color: '#444',
@@ -361,6 +361,6 @@ const styles = StyleSheet.create({
     // Tappable area for restart
   },
   stuckHintText: {
-    color: '#7986cb',
+    color: '#888888',
   },
 });

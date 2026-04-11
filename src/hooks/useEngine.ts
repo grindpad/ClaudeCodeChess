@@ -57,14 +57,20 @@ export function useEngine(): void {
       }
     );
 
+    // BUG-F FIX: 300ms debounce for MultiPV changes so rapid +/- taps collapse to one
+    let multiPvDebounce: ReturnType<typeof setTimeout> | null = null;
     const unsubscribeMultiPv = useChessStore.subscribe(
       (state) => state.multiPvCount,
       (multiPvCount) => {
-        const { isAnalysing, currentFen, targetDepth, clearEngineOutput } = useChessStore.getState();
-        if (isAnalysing && controllerRef.current) {
-          clearEngineOutput();
-          controllerRef.current.analyzePosition(currentFen, targetDepth, multiPvCount);
-        }
+        if (multiPvDebounce) clearTimeout(multiPvDebounce);
+        multiPvDebounce = setTimeout(() => {
+          multiPvDebounce = null;
+          const { isAnalysing, currentFen, targetDepth, clearEngineOutput } = useChessStore.getState();
+          if (isAnalysing && controllerRef.current) {
+            clearEngineOutput();
+            controllerRef.current.analyzePosition(currentFen, targetDepth, multiPvCount);
+          }
+        }, 300);
       }
     );
 

@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: SIDEBAR_WIDTH,
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
     zIndex: 100,
     // Shadow on web/iOS
     ...Platform.select({
@@ -275,11 +275,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
     marginBottom: 8,
   },
   sidebarTitle: {
-    color: '#7986cb',
+    color: '#888888',
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     marginHorizontal: 16,
     marginVertical: 8,
   },
@@ -300,13 +300,13 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   sidebarItemActive: {
-    backgroundColor: '#1e2050',
+    backgroundColor: '#2A2A2A',
   },
   sidebarItemDisabled: {
     opacity: 0.35,
   },
   sidebarItemPressed: {
-    backgroundColor: '#1e1e3a',
+    backgroundColor: '#2E2E2E',
   },
   sidebarItemIcon: {
     fontSize: 18,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sidebarItemLabel: {
-    color: '#c0c0e0',
+    color: '#F0F0F0',
     fontSize: 15,
     fontWeight: '500',
   },

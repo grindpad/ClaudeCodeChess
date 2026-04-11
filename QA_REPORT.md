@@ -489,3 +489,40 @@ EngineController
 - **Metro dev server required:** `baseUrl: 'http://localhost:8081'` means the Stockfish JS is fetched from the Metro server. In a production OTA or standalone build the Metro server is not running, so the Worker script URL will fail to load. A production-ready approach would bundle the stockfish JS as a static asset and serve it via a local HTTP server (e.g. `expo-file-system` + a local fetch), or embed the JS inline in the HTML blob. This is a development/EAS Dev Client solution.
 - **Peer dependency conflict** — `react-native-webview` installed with `--legacy-peer-deps` due to the same `react-native-reanimated` version lock described in the previous section.
 - **iOS 14+ required** — WKWebView with Worker support is available from iOS 14. This matches Expo SDK 55's minimum iOS deployment target.
+
+---
+
+## iPhone SE PWA Bug Fix Pass (2026-04-11)
+
+### Bug Fixes
+
+| Bug ID | Scenario | Root Cause | Fix Applied | Verify On Device |
+|--------|----------|------------|-------------|-----------------|
+| BUG-A | Last move arrow not shown for Explorer/Engine moves | `makeMove` in `gameSlice.ts` did not set `lastMoveSquares`. Only `ChessBoardWrapper.handleMove` called `setLastMove`. Explorer and engine panel both route through `makeMove`, which bypassed the UI update. | Added `lastMoveSquares: [from, to]` to all three code paths inside `makeMove` (existing next move, variation entry, new move). | No — pure logic path. |
+| BUG-B | Flip board only flips arrows, not the board | `ChessBoardWrapper` did not read `boardFlipped` from store. `react-native-chessboard` has no native `flipped`/`orientation` prop. | Applied `transform: [{ rotate: '180deg' }]` to the board container View when `boardFlipped`. Passed `renderPiece` prop that counter-rotates each piece `Image` by 180° to keep pieces upright. Piece assets loaded via `require('react-native-chessboard/lib/commonjs/constants').PIECES`. | YES — touch coordinate mapping after rotation relies on React Native's responder transform system. Verify drag/tap correctly identifies squares on h-file and a-file in flipped view. |
+| BUG-C | Yellow arrow stuck on wrong move during navigation | `navigateForward`, `navigateBack`, `navigateToNode`, `enterVariation`, and `resetToStartPosition` never updated `lastMoveSquares`. The arrow only changed when a new move was played, not when stepping through history. | Added `lastMoveSquares: uciToSquares(node?.uci)` to every navigation action. Root position yields `null` (no arrow). Helper `uciToSquares` slices the first 4 chars of the UCI string. | No — pure store logic. |
+| BUG-D | Castling not triggered by tap-to-move | `chess.moves({ square })` (non-verbose) returns SAN strings "O-O"/"O-O-O" instead of target squares. The library's `PlaceholderDot` checks `selectableSquares.includes(currentSquare)` — "O-O".includes("g1") is always false, so castling hint dots don't appear. | **Not fixed** — library internals cannot be modified without patching `node_modules`. **Drag-to-castle works** (drag path uses `chess.moves({ verbose: true })` which returns correct square pairs). Document as known library limitation. | YES — verify castling by dragging the king to the rook's destination square (g1/c1/g8/c8). |
+| BUG-E | Engine crashes/stalls with MultiPV > 1 + rapid navigation | Race condition: `analyzePosition` sent `stop` immediately followed by `isready` without waiting for `bestmove`. If called multiple times rapidly, multiple `isready`+`readyok` cycles could overlap. When `readyok` arrived with no `pendingSearch` but `isSearching=true`, the condition `} else { onStatus('ready') }` incorrectly set status to `ready` during an active search, losing the analysis state. | Added `isStopping` flag. When searching, `analyzePosition` now sends `stop`, sets `isStopping=true`, queues in `pendingSearch`, but does NOT send `isready` yet. `isready` is sent only after `bestmove` is received. `readyok` handler guarded: only calls `onStatus('ready')` if `!isSearching`. Watchdog increased to 10 seconds. | YES — test with MultiPV=3, rapid ◀▶ navigation. Verify engine panel keeps showing results without freezing. |
+| BUG-F | Engine crashes when quickly pressing +/- lines buttons | Sending `setoption name MultiPV` while a search is running without stopping first. The `useEngine` MultiPV subscription immediately called `analyzePosition` on every store update. With `setMultiPv` called in rapid succession (faster than the 150ms debounce), multiple stop+isready sequences could be queued. | Added a 300ms debounce in `useEngine.ts` around the MultiPV subscription callback. Combined with the 150ms debounce in `analyzePosition`, rapid taps are collapsed to a single analysis restart ~450ms after the last tap. | YES — tap + and - buttons rapidly while engine is analysing. Verify no engine crash/freeze. |
+| BUG-G | New Game from sidebar doesn't clear the board | `newGame` in `gameSlice.ts` reset game state but did not include `lastMoveSquares: null` or `engineOutput: null`. The board's internal state is reset via `ChessBoardWrapper`'s `currentFen` effect (calls `resetBoard(STARTING_FEN)` when FEN changes). Engine output was cleared via the `useEngine` FEN subscription. | Added `lastMoveSquares: null` and `engineOutput: null` to `newGame`. Also added `lastMoveSquares: null` and `engineOutput: null` to `loadPgn` for parity. | No — verified by store state trace. |
+
+---
+
+### Style Changes
+
+| ID | Change | Files Modified |
+|----|--------|----------------|
+| STYLE-A | Evaluation bar colours changed to pure black (`#000000`) and white (`#FFFFFF`) with a thin `#555` hairline divider between. | `EvaluationBar.tsx` |
+| STYLE-B | App-wide greyscale palette: bg `#111111`, surface `#1C1C1C`, border `#2E2E2E`, text `#F0F0F0`, secondary text `#888888`, accent `#FFFFFF`, btn bg `#2A2A2A`, btn active `#3A3A3A`. Board square colours unchanged. | `Sidebar.tsx`, `EnginePanel.tsx`, `ExplorerPanel.tsx`, `ExplorerMoveRow.tsx`, `NotationPanel.tsx`, `MoveToken.tsx`, `settings.tsx`, `games.tsx`, `board.tsx`, `_layout.tsx` |
+| STYLE-C | Nav button visual height reduced to 36pt. `hitSlop={8}` on each `Pressable` maintains 44pt touch target. | `NavigationControls.tsx` |
+| STYLE-D | Tab bar (Notation/Explorer/Engine buttons) removed entirely. Panel navigation is swipe-only. Active panel name shown in 10pt grey label inline to the right of the flip button. `activePanel` state lifted to `BoardContainer`. `PanelTabs` now accepts `activeTab` and `onTabChange` as props. | `PanelTabs.tsx`, `NavigationControls.tsx`, `BoardContainer.tsx` |
+| STYLE-E | Viewport meta updated: `maximum-scale=1, user-scalable=no`. Global `touch-action: manipulation` CSS applied to all elements in `index.html` to disable double-tap zoom. | `public/index.html` |
+
+---
+
+### UNCERTAIN Items (Require Physical Device Testing)
+
+- **BUG-B (flip — h/a file precision):** After 180° board rotation, React Native remaps touch coordinates through the transform matrix. The library's `toPosition` uses `Math.round(x / pieceSize)` which can return index 8 (out of range) at certain sub-pixel positions near the h-file/a-file centre. In practice, most of the square area maps correctly; only positions very close to the 7.5× boundary round to 8. Expected: drag and tap mostly correct, with rare misidentification at the exact centre of h-file squares. Verify on device.
+- **BUG-D (castling tap-to-move):** Not fixed — library limitation. Drag works; tap-to-move shows no hint dot for castling targets.
+- **STYLE-D (panel switching UX):** Users navigate panels by horizontal swipe only. Verify that horizontal swipes on the panel area work intuitively and don't conflict with vertical scrolling in the notation and engine panels.
+

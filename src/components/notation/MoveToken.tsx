@@ -73,10 +73,10 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   tokenActive: {
-    backgroundColor: '#5c6bc0',
+    backgroundColor: '#555555',
   },
   tokenPressed: {
-    backgroundColor: '#3d3d6e',
+    backgroundColor: '#3A3A3A',
   },
   moveNumber: {
     color: '#888',
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     color: '#c5cae9',
   },
   san: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 14,
     fontWeight: '500',
   },

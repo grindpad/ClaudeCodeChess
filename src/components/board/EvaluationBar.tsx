@@ -50,11 +50,7 @@ export default function EvaluationBar({
             ? { height: size, width: thickness }
             : { width: size, height: thickness },
         ]}
-      >
-        <Text style={styles.unsupportedText} numberOfLines={orientation === 'vertical' ? undefined : 1}>
-          {orientation === 'vertical' ? 'Engine\nWeb\nonly' : 'Engine: web only'}
-        </Text>
-      </View>
+      />
     );
   }
 
@@ -86,21 +82,16 @@ export default function EvaluationBar({
       <View style={[styles.verticalBar, { height: size, width: thickness }]}>
         {/* Black portion (top) */}
         <View style={[styles.blackFill, { flex: blackShare }]} />
-        {/* Score label in the middle */}
-        <View style={styles.scoreLabelContainer}>
-          <Text
-            style={[
-              styles.scoreLabel,
-              styles.scoreLabelVertical,
-              isLoading && styles.scoreLabelDim,
-            ]}
-            numberOfLines={1}
-          >
+        {/* Divider */}
+        <View style={styles.divider} />
+        {/* White portion (bottom) */}
+        <View style={[styles.whiteFill, { flex: whiteShare }]} />
+        {/* Score label overlay */}
+        <View style={styles.scoreLabelContainer} pointerEvents="none">
+          <Text style={[styles.scoreLabel, isLoading && styles.scoreLabelDim]} numberOfLines={1}>
             {isLoading ? '…' : scoreLabel}
           </Text>
         </View>
-        {/* White portion (bottom) */}
-        <View style={[styles.whiteFill, { flex: whiteShare }]} />
       </View>
     );
   }
@@ -109,39 +100,54 @@ export default function EvaluationBar({
     <View style={[styles.horizontalBar, { width: size, height: thickness }]}>
       {/* White portion (left) */}
       <View style={[styles.whiteFill, { flex: whiteShare }]} />
-      {/* Score label */}
-      <View style={styles.scoreLabelContainer}>
-        <Text
-          style={[styles.scoreLabel, isLoading && styles.scoreLabelDim]}
-          numberOfLines={1}
-        >
+      {/* Divider */}
+      <View style={styles.dividerH} />
+      {/* Black portion (right) */}
+      <View style={[styles.blackFill, { flex: blackShare }]} />
+      {/* Score label overlay */}
+      <View style={styles.scoreLabelContainer} pointerEvents="none">
+        <Text style={[styles.scoreLabel, isLoading && styles.scoreLabelDim]} numberOfLines={1}>
           {isLoading ? '…' : scoreLabel}
         </Text>
       </View>
-      {/* Black portion (right) */}
-      <View style={[styles.blackFill, { flex: blackShare }]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   verticalBar: {
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: 'hidden',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#333',
     position: 'relative',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#444',
   },
   horizontalBar: {
     flexDirection: 'row',
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: 'hidden',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#333',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#444',
   },
+  // STYLE-A: pure black and white fills
   whiteFill: {
-    backgroundColor: '#eeeed2',
+    backgroundColor: '#FFFFFF',
   },
   blackFill: {
-    backgroundColor: '#769656',
+    backgroundColor: '#000000',
+  },
+  // Thin grey divider between the two fills
+  divider: {
+    width: '100%',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#555',
+  },
+  dividerH: {
+    height: '100%',
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: '#555',
   },
   scoreLabelContainer: {
     position: 'absolute',
@@ -152,34 +158,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
-    pointerEvents: 'none',
   },
   scoreLabel: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
-    color: '#1a1a2e',
-    backgroundColor: 'rgba(255,255,255,0.55)',
+    color: '#111',
+    backgroundColor: 'rgba(255,255,255,0.7)',
     paddingHorizontal: 2,
     paddingVertical: 1,
     borderRadius: 2,
     overflow: 'hidden',
   },
-  scoreLabelVertical: {
-    // No rotation — the label is always horizontal (number is readable)
-  },
   scoreLabelDim: {
     opacity: 0.4,
   },
   unsupported: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 2,
-  },
-  unsupportedText: {
-    color: '#444',
-    fontSize: 7,
-    textAlign: 'center',
+    backgroundColor: '#1C1C1C',
+    borderRadius: 3,
   },
 });

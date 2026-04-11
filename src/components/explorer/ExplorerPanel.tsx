@@ -68,11 +68,11 @@ export default function ExplorerPanel() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   scrollView: {
     flex: 1,
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
   },
   content: {
     paddingBottom: 24,
@@ -81,10 +81,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   openingName: {
-    color: '#a8b4ff',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 2,
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     gap: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   colLabel: {
     color: '#444',

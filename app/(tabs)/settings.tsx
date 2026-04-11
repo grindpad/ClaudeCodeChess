@@ -135,8 +135,8 @@ function BoardSection() {
         <Switch
           value={showCoordinates}
           onValueChange={toggleCoordinates}
-          trackColor={{ false: '#2d2d4e', true: '#5c6bc0' }}
-          thumbColor={showCoordinates ? '#a8b4ff' : '#666'}
+          trackColor={{ false: '#2E2E2E', true: '#555555' }}
+          thumbColor={showCoordinates ? '#FFFFFF' : '#666'}
         />
       </Row>
     </Section>
@@ -157,8 +157,8 @@ function ExplorerSection() {
         <Switch
           value={explorerEnabled}
           onValueChange={toggleExplorer}
-          trackColor={{ false: '#2d2d4e', true: '#5c6bc0' }}
-          thumbColor={explorerEnabled ? '#a8b4ff' : '#666'}
+          trackColor={{ false: '#2E2E2E', true: '#555555' }}
+          thumbColor={explorerEnabled ? '#FFFFFF' : '#666'}
         />
       </Row>
       <View style={styles.tokenRow}>
@@ -290,7 +290,7 @@ function StepButton({ label, onPress }: { label: string; onPress: () => void }) 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#111111',
   },
   backBtn: {
     paddingHorizontal: 16,
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   backBtnText: {
-    color: '#a8b4ff',
+    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '500',
   },
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   screenTitle: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 24,
     fontWeight: '700',
     marginBottom: 8,
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    color: '#7986cb',
+    color: '#888888',
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sectionBody: {
-    backgroundColor: '#12122a',
+    backgroundColor: '#1C1C1C',
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -347,10 +347,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   rowLabel: {
-    color: '#c0c0e0',
+    color: '#C8C8C8',
     fontSize: 14,
     flex: 1,
     marginRight: 12,
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stepBtn: {
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     width: 32,
     height: 32,
     borderRadius: 8,
@@ -374,16 +374,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepBtnPressed: {
-    backgroundColor: '#3d3d6e',
+    backgroundColor: '#3A3A3A',
   },
   stepBtnText: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 18,
     fontWeight: '700',
     lineHeight: 20,
   },
   stepValue: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 16,
     fontWeight: '600',
     minWidth: 28,
@@ -398,13 +398,13 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   segment: {
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 6,
   },
   segmentActive: {
-    backgroundColor: '#3949ab',
+    backgroundColor: '#3A3A3A',
   },
   segmentText: {
     color: '#888',
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   segmentTextActive: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
   },
 
   // Board theme swatches
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   themeSwatch: {
     alignItems: 'center',
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   themeSwatchActive: {
-    borderColor: '#7986cb',
+    borderColor: '#888888',
   },
   miniBoard: {
     width: 40,
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   themeLabelActive: {
-    color: '#a8b4ff',
+    color: '#FFFFFF',
   },
 
   // Action button
@@ -461,10 +461,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionBtnPressed: {
-    backgroundColor: '#1e1e3a',
+    backgroundColor: '#2A2A2A',
   },
   actionBtnText: {
-    color: '#a8b4ff',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -479,14 +479,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   tokenInput: {
-    backgroundColor: '#0e0e22',
+    backgroundColor: '#111111',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2d2d4e',
-    color: '#c0c0e0',
+    borderColor: '#2E2E2E',
+    color: '#C8C8C8',
     fontSize: 13,
     fontFamily: 'monospace',
     paddingHorizontal: 12,
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
     padding: 12,
     lineHeight: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2d2d4e',
+    borderBottomColor: '#2E2E2E',
   },
   hintText: {
     color: '#555',
@@ -509,7 +509,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   aboutText: {
-    color: '#c0c0e0',
+    color: '#C8C8C8',
     fontSize: 14,
     fontWeight: '600',
     paddingHorizontal: 16,
