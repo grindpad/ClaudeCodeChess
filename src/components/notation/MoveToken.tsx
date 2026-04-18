@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MoveNode, NavigationPath } from '../../types/moveTree';
 import { nagsToString } from '../../utils/nag';
 import { useChessStore } from '../../store';
@@ -14,7 +14,8 @@ interface MoveTokenProps {
    * a variation block (where the flow was interrupted).
    */
   showMoveNumberPrefix: boolean;
-  onMeasure: (nodeId: string, y: number) => void;
+  /** Registers this token's View ref for auto-scroll measurements. */
+  onRegisterRef: (nodeId: string, ref: View | null) => void;
 }
 
 export default function MoveToken({
@@ -22,43 +23,55 @@ export default function MoveToken({
   path,
   isActive,
   showMoveNumberPrefix,
-  onMeasure,
+  onRegisterRef,
 }: MoveTokenProps) {
   const navigateToNode = useChessStore((s) => s.navigateToNode);
   const nags = nagsToString(node.nags);
+  const viewRef = useRef<View>(null);
 
   const showWhiteNumber = node.color === 'w';
   const showBlackEllipsis = node.color === 'b' && showMoveNumberPrefix;
 
+  // Register this token's native view ref on mount so NotationPanel can
+  // call measureLayout on it relative to the ScrollView.
+  useEffect(() => {
+    onRegisterRef(node.id, viewRef.current);
+    return () => {
+      onRegisterRef(node.id, null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id]);
+
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.token,
-        isActive && styles.tokenActive,
-        pressed && styles.tokenPressed,
-      ]}
-      onPress={() => navigateToNode(path)}
-      onLayout={(e) => onMeasure(node.id, e.nativeEvent.layout.y)}
-      accessibilityRole="button"
-      accessibilityLabel={`${showWhiteNumber ? node.moveNumber + '.' : ''}${node.san}`}
-    >
-      {showWhiteNumber && (
-        <Text style={[styles.moveNumber, isActive && styles.moveNumberActive]}>
-          {node.moveNumber}.{' '}
+    <View ref={viewRef} collapsable={false}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.token,
+          isActive && styles.tokenActive,
+          pressed && styles.tokenPressed,
+        ]}
+        onPress={() => navigateToNode(path)}
+        accessibilityRole="button"
+        accessibilityLabel={`${showWhiteNumber ? node.moveNumber + '.' : ''}${node.san}`}
+      >
+        {showWhiteNumber && (
+          <Text style={[styles.moveNumber, isActive && styles.moveNumberActive]}>
+            {node.moveNumber}.{' '}
+          </Text>
+        )}
+        {showBlackEllipsis && (
+          <Text style={[styles.moveNumber, isActive && styles.moveNumberActive]}>
+            {node.moveNumber}...{' '}
+          </Text>
+        )}
+        <Text style={[styles.san, isActive && styles.sanActive]}>
+          {node.san}
+          {nags ? (
+            <Text style={[styles.nag, isActive && styles.nagActive]}>{nags}</Text>
+          ) : null}
         </Text>
-      )}
-      {showBlackEllipsis && (
-        <Text style={[styles.moveNumber, isActive && styles.moveNumberActive]}>
-          {node.moveNumber}...{' '}
-        </Text>
-      )}
-      <Text style={[styles.san, isActive && styles.sanActive]}>
-        {node.san}
-        {nags ? (
-          <Text style={[styles.nag, isActive && styles.nagActive]}>{nags}</Text>
-        ) : null}
-      </Text>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 

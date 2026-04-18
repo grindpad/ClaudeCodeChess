@@ -1,23 +1,47 @@
 /**
  * ChessBoardWrapper — controlled wrapper around react-native-chessboard.
  *
- * BUG-B FIX: Board flip via rotate(180deg) transform on the container View.
- * react-native-chessboard has no native flip prop. We rotate the container 180°;
- * React Native remaps touch events through the transform matrix so interaction
- * still targets the correct squares.
+ * BUG-A FIX (upside-down pieces when flipped):
+ *   The container is rotated 180° to flip the board squares. However, pieces are
+ *   also rotated 180° by that transform, making them appear upside-down.
+ *   Fix: use the `renderPiece` prop to render each piece with a counter-rotation
+ *   of 180°, so they appear upright relative to the viewer.
+ *   Piece PNGs are copied to assets/pieces/ (not loaded from node_modules internals)
+ *   so webpack can bundle them correctly for Expo web.
  *
- * Pieces appear visually upside-down when flipped — this is a known limitation
- * of the library and cannot be fixed without modifying node_modules. The board
- * squares are correctly repositioned (h1 at top-left in black's view).
+ * BUG-B NOTE (castling):
+ *   Drag-to-castle works on an un-flipped board: the library reports e1→g1 (or
+ *   e8→g8 etc.) and chess.js v1.4 accepts those UCI strings. Tap-to-castle is a
+ *   known library limitation — chess.js 0.12 (inside the library) returns "O-O"
+ *   in the non-verbose moves list, so no selectable dot appears on g1/c1.
+ *   Explorer / engine castling routes through makeMove("e1g1") which works fine.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import Chessboard from 'react-native-chessboard';
 import type { ChessboardRef } from 'react-native-chessboard';
 import type { Move } from 'chess.js';
 import { useChessStore } from '../../store';
 import { BOARD_THEMES } from '../../store/slices/uiSlice';
+import type { PieceType } from 'react-native-chessboard/src/types';
+
+// ── Piece images (local project copies — safe for webpack bundling) ───────────
+
+const PIECE_IMAGES: Record<PieceType, ReturnType<typeof require>> = {
+  bb: require('../../../assets/pieces/bb.png'),
+  bk: require('../../../assets/pieces/bk.png'),
+  bn: require('../../../assets/pieces/bn.png'),
+  bp: require('../../../assets/pieces/bp.png'),
+  bq: require('../../../assets/pieces/bq.png'),
+  br: require('../../../assets/pieces/br.png'),
+  wb: require('../../../assets/pieces/wb.png'),
+  wk: require('../../../assets/pieces/wk.png'),
+  wn: require('../../../assets/pieces/wn.png'),
+  wp: require('../../../assets/pieces/wp.png'),
+  wq: require('../../../assets/pieces/wq.png'),
+  wr: require('../../../assets/pieces/wr.png'),
+};
 
 interface ChessBoardWrapperProps {
   size: number;
@@ -26,6 +50,7 @@ interface ChessBoardWrapperProps {
 export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
   const boardRef = useRef<ChessboardRef>(null);
   const isUserMoveRef = useRef(false);
+  const pieceSize = size / 8;
 
   const currentFen = useChessStore((s) => s.currentFen);
   const makeMove = useChessStore((s) => s.makeMove);
@@ -50,11 +75,29 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
       isUserMoveRef.current = true;
       const uci = `${move.from}${move.to}${move.promotion ?? ''}`;
       makeMove(uci);
-      // makeMove now updates lastMoveSquares internally (BUG-A fix);
-      // setLastMove here keeps the board-level highlight in sync too.
       setLastMove([move.from, move.to]);
     },
     [makeMove, setLastMove]
+  );
+
+  // BUG-A FIX: when the board container is rotated 180°, pieces are also rotated
+  // 180° by the parent transform. We counter-rotate each piece to keep it upright.
+  const renderPiece = useCallback(
+    (piece: PieceType) => {
+      if (!boardFlipped) return null; // use library default rendering when not flipped
+      return (
+        <View style={[styles.pieceWrapper, { width: pieceSize, height: pieceSize }]}>
+          <Image
+            source={PIECE_IMAGES[piece]}
+            style={[
+              { width: pieceSize, height: pieceSize },
+              styles.pieceCounterRotated,
+            ]}
+          />
+        </View>
+      );
+    },
+    [boardFlipped, pieceSize]
   );
 
   return (
@@ -80,6 +123,7 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
           checkmateHighlight: '#E84855',
         }}
         durations={{ move: 120 }}
+        renderPiece={boardFlipped ? renderPiece : undefined}
       />
     </View>
   );
@@ -90,6 +134,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   flipped: {
+    transform: [{ rotate: '180deg' }],
+  },
+  pieceWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Counter-rotate piece 180° to cancel out the container rotation
+  pieceCounterRotated: {
     transform: [{ rotate: '180deg' }],
   },
 });

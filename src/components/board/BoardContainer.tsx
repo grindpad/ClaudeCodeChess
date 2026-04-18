@@ -82,7 +82,7 @@ export default function BoardContainer() {
       </View>
 
       {/* Navigation + active panel label */}
-      <NavigationControls activePanel={activePanel} />
+      <NavigationControls activePanel={activePanel} onPanelChange={setActivePanel} />
 
       {/* Swipeable panels (no tab bar) */}
       <View style={styles.panelArea}>

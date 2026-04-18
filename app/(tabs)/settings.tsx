@@ -193,7 +193,7 @@ function GameSection() {
       return;
     }
     const pgn = serializePgn(moveTree, metadata);
-    const filename = `${metadata?.White ?? 'game'}_vs_${metadata?.Black ?? 'opponent'}.pgn`
+    const filename = `${metadata?.white ?? 'game'}_vs_${metadata?.black ?? 'opponent'}.pgn`
       .replace(/[^\w._-]/g, '_');
 
     if (Platform.OS === 'web') {

@@ -20,6 +20,33 @@ import { useRouter } from 'expo-router';
 import { useChessStore } from '../../store';
 import { serializePgn } from '../../pgn/pgnSerializer';
 import { saveGame } from '../../storage/gameStorage';
+import type { PgnMetadata } from '../../types/pgn';
+
+/** Exports a PGN string using Web Share API (with .pgn File) or a download link fallback. */
+export async function exportPgn(pgn: string, metadata: PgnMetadata | null): Promise<void> {
+  const white = (metadata?.white ?? 'game').replace(/[^\w._-]/g, '_');
+  const black = (metadata?.black ?? 'opponent').replace(/[^\w._-]/g, '_');
+  const date = (metadata?.date ?? '').replace(/[^\w._-]/g, '_') || 'unknown';
+  const filename = `${white}-vs-${black}-${date}.pgn`;
+
+  if (Platform.OS === 'web') {
+    const file = new File([pgn], filename, { type: 'application/x-chess-pgn' });
+    if ((navigator as any).canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+    // Fallback: blob download
+    const url = URL.createObjectURL(new Blob([pgn], { type: 'application/x-chess-pgn' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    const { Share } = await import('react-native');
+    await Share.share({ message: pgn, title: filename });
+  }
+}
 
 const SIDEBAR_WIDTH = 260;
 
@@ -141,14 +168,38 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
       Alert.alert('Nothing to save', 'No game is loaded.');
       return;
     }
-    try {
-      const pgn = serializePgn(moveTree, metadata);
-      saveGame(pgn, metadata, 'played');
-      Alert.alert('Saved', 'Game saved to device storage.');
-    } catch {
-      Alert.alert('Error', 'Failed to save game.');
-    }
     onClose();
+
+    Alert.alert(
+      'Save Game',
+      'Choose an action',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save to Library',
+          onPress: () => {
+            try {
+              const pgn = serializePgn(moveTree, metadata);
+              saveGame(pgn, metadata, 'played');
+              Alert.alert('Saved', 'Game saved to library.');
+            } catch {
+              Alert.alert('Error', 'Failed to save game.');
+            }
+          },
+        },
+        {
+          text: 'Export as PGN',
+          onPress: async () => {
+            try {
+              const pgn = serializePgn(moveTree, metadata);
+              await exportPgn(pgn, metadata);
+            } catch {
+              Alert.alert('Error', 'Failed to export PGN.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleImport = () => {

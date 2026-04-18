@@ -10,12 +10,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useChessStore } from '../../store';
+import { parseMultiPgn } from '../../pgn/pgnParser';
 
 export default function PgnImportModal() {
+  const router = useRouter();
   const visible = useChessStore((s) => s.pgnImportModalVisible);
   const closePgnImport = useChessStore((s) => s.closePgnImport);
   const loadPgn = useChessStore((s) => s.loadPgn);
+  const setPendingImportGames = useChessStore((s) => s.setPendingImportGames);
 
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -23,10 +27,22 @@ export default function PgnImportModal() {
   const handleImport = () => {
     if (!text.trim()) return;
     try {
-      loadPgn(text.trim());
-      setError(null);
-      setText('');
-      closePgnImport();
+      const games = parseMultiPgn(text.trim());
+
+      if (games.length === 1) {
+        // Single game — load immediately
+        loadPgn(games[0].pgn);
+        setError(null);
+        setText('');
+        closePgnImport();
+      } else {
+        // Multiple games — show selector screen
+        setPendingImportGames(games);
+        setError(null);
+        setText('');
+        closePgnImport();
+        router.push('/import-select');
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invalid PGN');
     }
@@ -64,7 +80,7 @@ export default function PgnImportModal() {
               value={text}
               onChangeText={setText}
               placeholder={'[Event "..."]\n[White "..."]\n[Black "..."]\n\n1. e4 e5 2. Nf3 ...'}
-              placeholderTextColor="#666"
+              placeholderTextColor="#555"
               autoCapitalize="none"
               autoCorrect={false}
               spellCheck={false}
@@ -98,7 +114,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#1e1e3f',
+    backgroundColor: '#1C1C1C',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 20,
@@ -111,7 +127,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    color: '#e0e0ff',
+    color: '#F0F0F0',
     fontSize: 18,
     fontWeight: '700',
   },
@@ -121,18 +137,20 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   label: {
-    color: '#aaa',
+    color: '#888',
     fontSize: 13,
     marginBottom: 8,
   },
   inputScroll: {
-    maxHeight: 300,
+    maxHeight: 280,
   },
   input: {
-    backgroundColor: '#0d0d1e',
+    backgroundColor: '#111111',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2E2E2E',
     padding: 12,
-    color: '#e0e0ff',
+    color: '#C8C8C8',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 12,
     minHeight: 160,
@@ -150,28 +168,32 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    backgroundColor: '#2d2d4e',
+    backgroundColor: '#2E2E2E',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   cancelText: {
-    color: '#aaa',
+    color: '#888',
     fontSize: 15,
     fontWeight: '600',
   },
   importBtn: {
     flex: 2,
-    backgroundColor: '#5c6bc0',
+    backgroundColor: '#3A3A3A',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   importBtnDisabled: {
     opacity: 0.4,
   },
   importText: {
-    color: '#fff',
+    color: '#F0F0F0',
     fontSize: 15,
     fontWeight: '700',
   },

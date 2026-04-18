@@ -526,3 +526,34 @@ EngineController
 - **BUG-D (castling tap-to-move):** Not fixed — library limitation. Drag works; tap-to-move shows no hint dot for castling targets.
 - **STYLE-D (panel switching UX):** Users navigate panels by horizontal swipe only. Verify that horizontal swipes on the panel area work intuitively and don't conflict with vertical scrolling in the notation and engine panels.
 
+
+---
+
+## Bug Fix Round 3 (2026-04-18)
+
+### Bug Fixes
+
+| ID | Scenario | Root Cause | Fix | Status |
+|----|----------|------------|-----|--------|
+| BUG-A | Pieces upside-down when board is flipped | Container `rotate(180deg)` transform flips the entire Chessboard component including pieces. Library has no `flipped`/`orientation` prop. | Copied 12 piece PNGs to `assets/pieces/`. When `boardFlipped=true`, `renderPiece` renders each piece with a counter-rotation of `rotate(180deg)`, cancelling the container rotation for pieces only. Board squares remain correctly mirrored. | FIXED |
+| BUG-B (board) | Tap-to-castle shows no hint dot on g1/c1 | Library's `onSelectPiece` calls `chess.moves({ square })` (non-verbose) in chess.js 0.12.1, which returns SAN strings. "O-O" is split on 'x' to give "O-O" (not "g1"), so no `PlaceholderDot` appears on the castling target square. | **Not fixable** without patching `node_modules`. Drag-to-castle works correctly: `validateMove` uses verbose mode (`{ to: 'g1' }` returned) and `chess.move({ from:'e1',to:'g1' })` succeeds in both chess.js versions. | LIBRARY LIMITATION |
+| BUG-B (explorer/engine) | Castling via explorer/engine moves | Verified: Lichess API and Stockfish both use standard UCI `e1g1`/`e1c1`/`e8g8`/`e8c8`. `makeMove('e1g1')` → `chess.move({ from:'e1', to:'g1' })` in chess.js v1.4 — confirmed to work when position has castling rights. No code change needed. | VERIFIED WORKING |
+| BUG-C | Notation panel doesn't scroll to active move during navigation | `MoveToken.onLayout` reports `layout.y` relative to the immediate parent container, not the ScrollView. For moves inside nested VariationBlock containers, this gives wrong scroll targets. | Changed `MoveToken` to hold a `View` ref (`collapsable={false}`) and register it via `onRegisterRef`. `NotationPanel` calls `ref.measureLayout(scrollViewRef, callback)` on active node change — this returns correct coordinates relative to the ScrollView for both main-line and variation tokens. 50ms delay added to let layout settle after navigation. | FIXED |
+
+### New Features
+
+| ID | Feature | Implementation | Status |
+|----|---------|----------------|--------|
+| FEATURE-A (Part 1) | Engine panel in swipeable panels | Already implemented in prior session — `PanelTabs` already includes all 3 panels (Notation/Explorer/Engine) with swipe navigation. | ALREADY DONE |
+| FEATURE-A (Part 2) | Panel selector popup button | Converted the inline panel label in `NavigationControls` from a `Text` to a tappable `Pressable` that opens a `Modal` popup. Popup shows all 3 panel options with a checkmark on the active one. Tapping an option calls `onPanelChange` and dismisses. `onPanelChange` prop added to `NavigationControls`; wired in `BoardContainer`. | IMPLEMENTED |
+| FEATURE-B | Multi-game PGN import with game selector | Added `parseMultiPgn()` to `pgnParser.ts` using `@mliebelt/pgn-parser`'s `parseGames` export. `PgnImportModal` detects multi-game PGNs and routes to new `app/import-select.tsx` screen (full screen list, greyscale theme). Single-game imports load directly as before. `pendingImportGames` state added to `uiSlice`. | IMPLEMENTED |
+| FEATURE-C (sidebar) | Save Game action sheet with export option | `handleSaveGame` in `Sidebar.tsx` now shows a 3-option `Alert` (`Save to Library` / `Export as PGN` / Cancel). `exportPgn()` helper uses Web Share API with `.pgn` File object, falls back to blob download anchor on desktop browsers. | IMPLEMENTED |
+| FEATURE-C (All Games) | Export button on each game row | Each row in `app/games.tsx` has a `↑` share button (44pt touch target). Tapping it calls `exportPgn` with the stored PGN and metadata. | IMPLEMENTED |
+
+### UNCERTAIN Items (Require Physical Device Testing)
+
+- **BUG-A (piece rotation):** The `renderPiece` counter-rotation approach should make pieces upright when flipped. Verify on device that pieces render correctly and chess piece image quality is acceptable (same PNGs as the library uses).
+- **BUG-B (drag-to-castle when flipped):** When the board container is rotated 180°, RNGH pan gesture `translationX/Y` may be reported in screen-space (not container-space), causing drag movements to map to wrong squares. Verify drag-to-castle works when board is in flipped orientation.
+- **BUG-C (measureLayout on web):** `View.measureLayout` is implemented in React Native Web but may behave differently than native. Verify smooth scroll-to-active-move on both web and native.
+- **FEATURE-B (multi-game PGN):** `splitPgnIntoGames` splits on `[` tag lines. Test with PGN files from different sources (Lichess export, ChessBase, etc.) which may have different line endings or formatting.
+- **FEATURE-C (Web Share API):** `navigator.canShare({ files: [file] })` returns false on desktop Chrome/Firefox (they don't support file sharing). The blob download fallback will trigger instead. Verify on mobile Safari/Chrome that the native share sheet appears with the `.pgn` file.

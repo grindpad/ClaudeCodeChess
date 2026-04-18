@@ -20,6 +20,7 @@ import {
 import { useRouter } from 'expo-router';
 import { getAllGames, deleteGame, type StoredGame } from '../src/storage/gameStorage';
 import { useChessStore } from '../src/store';
+import { exportPgn } from '../src/components/board/Sidebar';
 
 export default function GamesScreen() {
   const router = useRouter();
@@ -37,6 +38,23 @@ export default function GamesScreen() {
     },
     [loadPgn, router]
   );
+
+  const handleExport = useCallback(async (game: StoredGame) => {
+    try {
+      const meta = game.metadata ?? {};
+      // Build a minimal PgnMetadata-compatible object for the filename helper
+      await exportPgn(game.pgn, {
+        white: meta.white ?? null,
+        black: meta.black ?? null,
+        date: meta.date ?? null,
+        event: null, site: null, round: null, result: null,
+        whiteElo: null, blackElo: null, eco: null, opening: null,
+        timeControl: null, annotator: null, rawTags: {},
+      });
+    } catch {
+      Alert.alert('Export failed', 'Could not share this game.');
+    }
+  }, []);
 
   const handleDelete = useCallback((id: string) => {
     Alert.alert('Delete game', 'Remove this game from storage?', [
@@ -78,6 +96,7 @@ export default function GamesScreen() {
             game={game}
             onPress={() => handleLoad(game)}
             onDelete={() => handleDelete(game.id)}
+            onExport={() => handleExport(game)}
           />
         ))}
       </ScrollView>
@@ -93,18 +112,20 @@ function GameRow({
   game,
   onPress,
   onDelete,
+  onExport,
 }: {
   game: StoredGame;
   onPress: () => void;
   onDelete: () => void;
+  onExport: () => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const touchStartX = useRef(0);
   const swiping = useRef(false);
 
-  const white = game.metadata?.White ?? '?';
-  const black = game.metadata?.Black ?? '?';
-  const event = game.metadata?.Event;
+  const white = game.metadata?.white ?? '?';
+  const black = game.metadata?.black ?? '?';
+  const event = game.metadata?.event;
   const date = game.dateSaved
     ? new Date(game.dateSaved).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : '';
@@ -169,10 +190,20 @@ function GameRow({
             ) : null}
             <Text style={styles.dateText}>{date}</Text>
           </View>
-          <View style={[styles.badge, game.source === 'imported' && styles.badgeImported]}>
-            <Text style={styles.badgeText}>
-              {game.source === 'imported' ? 'PGN' : 'Played'}
-            </Text>
+          <View style={styles.rowActions}>
+            <Pressable
+              style={({ pressed }) => [styles.exportBtn, pressed && styles.exportBtnPressed]}
+              onPress={onExport}
+              accessibilityLabel="Export PGN"
+              hitSlop={8}
+            >
+              <Text style={styles.exportBtnText}>↑</Text>
+            </Pressable>
+            <View style={[styles.badge, game.source === 'imported' && styles.badgeImported]}>
+              <Text style={styles.badgeText}>
+                {game.source === 'imported' ? 'PGN' : 'Played'}
+              </Text>
+            </View>
           </View>
         </Pressable>
       </Animated.View>
@@ -288,6 +319,29 @@ const styles = StyleSheet.create({
   dateText: {
     color: '#555',
     fontSize: 12,
+  },
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exportBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#2E2E2E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 44,
+  },
+  exportBtnPressed: {
+    backgroundColor: '#3A3A3A',
+  },
+  exportBtnText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: '600',
   },
   badge: {
     backgroundColor: '#2E2E2E',

@@ -11,7 +11,7 @@ interface VariationBlockProps {
   variationIndex: number;
   depth: number;
   activeNodeId: string | null;
-  onMeasure: (nodeId: string, y: number) => void;
+  onRegisterRef: (nodeId: string, ref: View | null) => void;
 }
 
 export default function VariationBlock({
@@ -20,7 +20,7 @@ export default function VariationBlock({
   variationIndex,
   depth,
   activeNodeId,
-  onMeasure,
+  onRegisterRef,
 }: VariationBlockProps) {
   // Variations at depth ≥ 2 are collapsible; shallower ones are always visible
   const collapsible = depth >= 2;
@@ -63,7 +63,7 @@ export default function VariationBlock({
 
       <Text style={styles.paren}>(</Text>
       <View style={styles.line}>
-        {renderLine(nodes, forkPath, variationIndex, depth, activeNodeId, onMeasure)}
+        {renderLine(nodes, forkPath, variationIndex, depth, activeNodeId, onRegisterRef)}
       </View>
       <Text style={styles.paren}>)</Text>
     </View>
@@ -88,7 +88,7 @@ export function renderLine(
   variationIndex: number | undefined,
   depth: number,
   activeNodeId: string | null,
-  onMeasure: (nodeId: string, y: number) => void
+  onRegisterRef: (nodeId: string, ref: View | null) => void
 ): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
   // Track whether the previous sibling had a variation block (which breaks the flow).
@@ -127,7 +127,7 @@ export function renderLine(
         path={nodePath}
         isActive={activeNodeId === node.id}
         showMoveNumberPrefix={showMoveNumberPrefix}
-        onMeasure={onMeasure}
+        onRegisterRef={onRegisterRef}
       />
     );
 
@@ -155,7 +155,7 @@ export function renderLine(
             variationIndex={vi}
             depth={depth + 1}
             activeNodeId={activeNodeId}
-            onMeasure={onMeasure}
+            onRegisterRef={onRegisterRef}
           />
         );
       }

@@ -9,20 +9,48 @@ export default function NotationPanel() {
   const metadata = useChessStore((s) => s.metadata);
 
   const scrollViewRef = useRef<ScrollView>(null);
-  // Map of nodeId → y-position relative to the ScrollView content
-  const yPositions = useRef<Map<string, number>>(new Map());
+  // Map of nodeId → native View ref for measureLayout-based auto-scroll.
+  // Using a plain object rather than a Map so refs survive re-renders without
+  // triggering unnecessary effects.
+  const nodeViewRefs = useRef<Record<string, View | null>>({});
 
-  const handleMeasure = useCallback((nodeId: string, y: number) => {
-    yPositions.current.set(nodeId, y);
+  const handleRegisterRef = useCallback((nodeId: string, ref: View | null) => {
+    if (ref) {
+      nodeViewRefs.current[nodeId] = ref;
+    } else {
+      delete nodeViewRefs.current[nodeId];
+    }
   }, []);
 
-  // Auto-scroll to the active node whenever it changes
+  // BUG-C FIX: auto-scroll to active node using measureLayout relative to the
+  // ScrollView so the position is correct for moves in nested variations.
   useEffect(() => {
     if (!currentNode) return;
-    const y = yPositions.current.get(currentNode.id);
-    if (y !== undefined) {
-      scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 48), animated: true });
-    }
+    const viewRef = nodeViewRefs.current[currentNode.id];
+    if (!viewRef || !scrollViewRef.current) return;
+
+    // Small delay to let layout settle after navigation
+    const timer = setTimeout(() => {
+      try {
+        (viewRef as any).measureLayout(
+          scrollViewRef.current as any,
+          (_x: number, y: number, _w: number, h: number) => {
+            // Centre the active move vertically in the panel
+            scrollViewRef.current?.scrollTo({
+              y: Math.max(0, y - 80),
+              animated: true,
+            });
+          },
+          () => {
+            // measureLayout failed (e.g., node unmounted) — no-op
+          }
+        );
+      } catch {
+        // ignore measurement errors
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [currentNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!moveTree || moveTree.mainLine.length === 0) {
@@ -37,7 +65,7 @@ export default function NotationPanel() {
   }
 
   const activeNodeId = currentNode?.id ?? null;
-  const tokens = renderLine(moveTree.mainLine, [], undefined, 0, activeNodeId, handleMeasure);
+  const tokens = renderLine(moveTree.mainLine, [], undefined, 0, activeNodeId, handleRegisterRef);
 
   // Show result tag at the end if available
   const result = metadata?.result;

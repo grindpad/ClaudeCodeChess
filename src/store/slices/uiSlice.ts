@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { ChessStore } from '../chessStore';
+import type { ImportableGame } from '../../pgn/pgnParser';
 
 export type BoardTheme = 'classic' | 'blue' | 'walnut';
 
@@ -40,6 +41,8 @@ export interface UiSlice {
   showCoordinates: boolean;
   lichessToken: string;
   sidebarOpen: boolean;
+  /** Non-null when a multi-game PGN was imported and the user must pick one */
+  pendingImportGames: ImportableGame[] | null;
 
   // ── Actions ────────────────────────────────────────────────────────────────
   toggleNotationPanel: () => void;
@@ -56,6 +59,7 @@ export interface UiSlice {
   setLichessToken: (token: string) => void;
   openSidebar: () => void;
   closeSidebar: () => void;
+  setPendingImportGames: (games: ImportableGame[] | null) => void;
 }
 
 export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], UiSlice> =
@@ -71,6 +75,7 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
     showCoordinates: true,
     lichessToken: (typeof window !== 'undefined' ? window.localStorage?.getItem('lichessToken') ?? '' : ''),
     sidebarOpen: false,
+    pendingImportGames: null,
 
     toggleNotationPanel() { set((s) => ({ notationPanelVisible: !s.notationPanelVisible })); },
     toggleExplorerPanel() { set((s) => ({ explorerPanelVisible: !s.explorerPanelVisible })); },
@@ -89,4 +94,5 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
     },
     openSidebar() { set({ sidebarOpen: true }); },
     closeSidebar() { set({ sidebarOpen: false }); },
+    setPendingImportGames(games) { set({ pendingImportGames: games }); },
   });
