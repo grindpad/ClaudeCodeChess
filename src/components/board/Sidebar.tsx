@@ -18,8 +18,6 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useChessStore } from '../../store';
-import { serializePgn } from '../../pgn/pgnSerializer';
-import { saveGame } from '../../storage/gameStorage';
 import type { PgnMetadata } from '../../types/pgn';
 
 /** Exports a PGN string using Web Share API (with .pgn File) or a download link fallback. */
@@ -132,9 +130,10 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 function SidebarContent({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const moveTree = useChessStore((s) => s.moveTree);
-  const metadata = useChessStore((s) => s.metadata);
   const newGame = useChessStore((s) => s.newGame);
   const openPgnImport = useChessStore((s) => s.openPgnImport);
+  const openSaveGameModal = useChessStore((s) => s.openSaveGameModal);
+  const hasUnsavedChanges = useChessStore((s) => s.hasUnsavedChanges);
   const isAnalysing = useChessStore((s) => s.isAnalysing);
   const startAnalysis = useChessStore((s) => s.startAnalysis);
   const stopAnalysis = useChessStore((s) => s.stopAnalysis);
@@ -145,17 +144,22 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
 
   const handleNewGame = () => {
     onClose();
-    if (moveTree) {
+    if (hasUnsavedChanges) {
       Alert.alert(
-        'New Game',
-        'Start a new game? The current game will be lost unless saved.',
+        'Unsaved Changes',
+        'You have unsaved moves. Start a new game anyway?',
         [
           { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'New Game',
-            style: 'destructive',
-            onPress: () => newGame(),
-          },
+          { text: 'Discard & New Game', style: 'destructive', onPress: () => newGame() },
+        ]
+      );
+    } else if (moveTree) {
+      Alert.alert(
+        'New Game',
+        'Start a new game?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'New Game', style: 'destructive', onPress: () => newGame() },
         ]
       );
     } else {
@@ -169,37 +173,7 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
       return;
     }
     onClose();
-
-    Alert.alert(
-      'Save Game',
-      'Choose an action',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save to Library',
-          onPress: () => {
-            try {
-              const pgn = serializePgn(moveTree, metadata);
-              saveGame(pgn, metadata, 'played');
-              Alert.alert('Saved', 'Game saved to library.');
-            } catch {
-              Alert.alert('Error', 'Failed to save game.');
-            }
-          },
-        },
-        {
-          text: 'Export as PGN',
-          onPress: async () => {
-            try {
-              const pgn = serializePgn(moveTree, metadata);
-              await exportPgn(pgn, metadata);
-            } catch {
-              Alert.alert('Error', 'Failed to export PGN.');
-            }
-          },
-        },
-      ]
-    );
+    openSaveGameModal();
   };
 
   const handleImport = () => {

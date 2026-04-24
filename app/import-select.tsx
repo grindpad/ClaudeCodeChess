@@ -1,14 +1,14 @@
 /**
  * ImportSelect — full-screen game selector for multi-game PGN imports.
  *
- * Each row shows: #, White vs Black, Event, Date, Result, move count,
- * and an annotation badge when the game has comments / variations.
+ * Receives an entryId route param, loads the LibraryEntry from storage,
+ * and shows all its StoredGameRecords for the user to pick from.
  *
  * A dismissible warning banner appears at the top when some games in the
  * file could not be parsed (errorCount route param > 0).
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -20,39 +20,42 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useChessStore } from '../src/store';
-import type { ImportableGame } from '../src/pgn/pgnParser';
+import { getEntry } from '../src/storage/gameStorage';
+import type { StoredGameRecord } from '../src/storage/storageTypes';
 
 export default function ImportSelectScreen() {
   const router = useRouter();
-  const { errorCount, firstError } = useLocalSearchParams<{
+  const { entryId, errorCount, firstError } = useLocalSearchParams<{
+    entryId?: string;
     errorCount?: string;
     firstError?: string;
   }>();
-  const pendingImportGames = useChessStore((s) => s.pendingImportGames);
-  const setPendingImportGames = useChessStore((s) => s.setPendingImportGames);
-  const loadPgn = useChessStore((s) => s.loadPgn);
 
-  const games = pendingImportGames ?? [];
+  const loadPgn = useChessStore((s) => s.loadPgn);
+  const setActiveLibraryGame = useChessStore((s) => s.setActiveLibraryGame);
+
+  const entry = useMemo(() => (entryId ? getEntry(entryId) : null), [entryId]);
+  const games = entry?.games ?? [];
+
   const numErrors = parseInt(errorCount ?? '0', 10);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const handleSelect = useCallback(
-    (game: ImportableGame) => {
+    (game: StoredGameRecord) => {
       try {
         loadPgn(game.pgn);
-        setPendingImportGames(null);
+        if (entryId) setActiveLibraryGame(entryId, game.id);
         router.back();
       } catch {
         Alert.alert('Error', 'Could not load this game.');
       }
     },
-    [loadPgn, setPendingImportGames, router]
+    [loadPgn, setActiveLibraryGame, entryId, router]
   );
 
   const handleCancel = useCallback(() => {
-    setPendingImportGames(null);
     router.back();
-  }, [setPendingImportGames, router]);
+  }, [router]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -88,14 +91,14 @@ export default function ImportSelectScreen() {
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {games.map((game) => (
-          <GameRow key={game.index} game={game} onPress={() => handleSelect(game)} />
+          <GameRow key={game.id} game={game} onPress={() => handleSelect(game)} />
         ))}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function GameRow({ game, onPress }: { game: ImportableGame; onPress: () => void }) {
+function GameRow({ game, onPress }: { game: StoredGameRecord; onPress: () => void }) {
   const white = game.white ?? '?';
   const black = game.black ?? '?';
   const showEvent = game.event && game.event !== '?';
@@ -103,10 +106,10 @@ function GameRow({ game, onPress }: { game: ImportableGame; onPress: () => void 
   const result = game.result;
 
   const resultColor =
-    result === '1-0'       ? '#a0c880' :
-    result === '0-1'       ? '#e08080' :
-    result === '1/2-1/2'  ? '#8888aa' :
-                            '#666';
+    result === '1-0'      ? '#a0c880' :
+    result === '0-1'      ? '#e08080' :
+    result === '1/2-1/2' ? '#8888aa' :
+                           '#666';
 
   const moveLabel = game.plyCount != null
     ? `${Math.ceil(game.plyCount / 2)} moves`
@@ -119,7 +122,7 @@ function GameRow({ game, onPress }: { game: ImportableGame; onPress: () => void 
       accessibilityRole="button"
     >
       <View style={styles.rowNum}>
-        <Text style={styles.numText}>{game.index + 1}</Text>
+        <Text style={styles.numText}>{game.indexInEntry + 1}</Text>
       </View>
 
       <View style={styles.rowMain}>

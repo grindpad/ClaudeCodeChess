@@ -2,6 +2,7 @@ import { SafeAreaView, StyleSheet } from 'react-native';
 import BoardContainer from '../../src/components/board/BoardContainer';
 import Sidebar from '../../src/components/board/Sidebar';
 import PgnImportModal from '../../src/components/pgn/PgnImportModal';
+import SaveGameModal from '../../src/components/pgn/SaveGameModal';
 
 export default function BoardScreen() {
   return (
@@ -10,6 +11,7 @@ export default function BoardScreen() {
         <BoardContainer />
       </Sidebar>
       <PgnImportModal />
+      <SaveGameModal />
     </SafeAreaView>
   );
 }

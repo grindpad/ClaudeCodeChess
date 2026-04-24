@@ -257,6 +257,7 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         currentNode: newNode,
         currentFen: newFen,
         lastMoveSquares: lastMove,
+        hasUnsavedChanges: true,
       });
     },
 
@@ -331,6 +332,9 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         explorerData: null,
         explorerError: null,
         engineOutput: null,
+        activeLibraryEntryId: null,
+        activeGameId: null,
+        hasUnsavedChanges: false,
       });
     },
   });

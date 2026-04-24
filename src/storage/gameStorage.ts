@@ -1,27 +1,31 @@
 /**
- * gameStorage — persists chess games to localStorage.
+ * gameStorage — persists chess library entries and session to localStorage.
  *
  * Keys:
- *   chess_game_index          → JSON array of IDs (newest first)
- *   chess_game_<id>           → JSON StoredGame object
+ *   chess_library_index          → JSON array of entry IDs (newest first)
+ *   chess_library_entry_{id}     → JSON LibraryEntry object
+ *   chess_session                → JSON SessionState object
  */
 
-import type { PgnMetadata } from '../types/pgn';
+import type { LibraryEntry, StoredGameRecord, SessionState } from './storageTypes';
 
-export interface StoredGame {
-  id: string;
-  pgn: string;
-  metadata: Partial<PgnMetadata>;
-  dateSaved: string;
-  source: 'played' | 'imported';
+export type { LibraryEntry, StoredGameRecord, SessionState };
+
+const INDEX_KEY = 'chess_library_index';
+const ENTRY_PREFIX = 'chess_library_entry_';
+const SESSION_KEY = 'chess_session';
+
+function ls(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }
-
-const PREFIX = 'chess_game_';
-const INDEX_KEY = 'chess_game_index';
 
 function getIndex(): string[] {
   try {
-    const raw = localStorage.getItem(INDEX_KEY);
+    const raw = ls()?.getItem(INDEX_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -30,56 +34,148 @@ function getIndex(): string[] {
 
 function setIndex(ids: string[]): void {
   try {
-    localStorage.setItem(INDEX_KEY, JSON.stringify(ids));
-  } catch {
-    // Ignore storage quota errors
-  }
+    ls()?.setItem(INDEX_KEY, JSON.stringify(ids));
+  } catch {}
 }
 
-export function saveGame(
-  pgn: string,
-  metadata: Partial<PgnMetadata> | null,
-  source: 'played' | 'imported' = 'played'
+function genId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// ── Entry CRUD ────────────────────────────────────────────────────────────────
+
+export function saveEntry(
+  entry: Omit<LibraryEntry, 'id' | 'dateAdded' | 'dateModified'>
 ): string {
-  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const game: StoredGame = {
-    id,
-    pgn,
-    metadata: metadata ?? {},
-    dateSaved: new Date().toISOString(),
-    source,
+  const now = new Date().toISOString();
+  const entryId = genId();
+  const games: StoredGameRecord[] = entry.games.map((g) => ({ ...g, entryId }));
+  const full: LibraryEntry = {
+    ...entry,
+    games,
+    id: entryId,
+    dateAdded: now,
+    dateModified: now,
   };
   try {
-    localStorage.setItem(PREFIX + id, JSON.stringify(game));
+    ls()?.setItem(ENTRY_PREFIX + entryId, JSON.stringify(full));
     const index = getIndex();
-    index.unshift(id); // newest first
+    index.unshift(entryId);
     setIndex(index);
-  } catch {
-    // Ignore storage quota errors
-  }
-  return id;
+  } catch {}
+  return entryId;
 }
 
-export function loadGame(id: string): StoredGame | null {
+export function getEntry(id: string): LibraryEntry | null {
   try {
-    const raw = localStorage.getItem(PREFIX + id);
-    return raw ? (JSON.parse(raw) as StoredGame) : null;
+    const raw = ls()?.getItem(ENTRY_PREFIX + id);
+    return raw ? (JSON.parse(raw) as LibraryEntry) : null;
   } catch {
     return null;
   }
 }
 
-export function getAllGames(): StoredGame[] {
+export function getAllEntries(): LibraryEntry[] {
   return getIndex()
-    .map((id) => loadGame(id))
-    .filter((g): g is StoredGame => g !== null);
+    .map((id) => getEntry(id))
+    .filter((e): e is LibraryEntry => e !== null)
+    .sort((a, b) => b.dateModified.localeCompare(a.dateModified));
 }
 
-export function deleteGame(id: string): void {
+export function deleteEntry(id: string): void {
   try {
-    localStorage.removeItem(PREFIX + id);
-    setIndex(getIndex().filter((existingId) => existingId !== id));
+    ls()?.removeItem(ENTRY_PREFIX + id);
+    setIndex(getIndex().filter((eid) => eid !== id));
+  } catch {}
+}
+
+export function updateEntry(
+  id: string,
+  patch: Partial<Pick<LibraryEntry, 'title' | 'games'>>
+): void {
+  const entry = getEntry(id);
+  if (!entry) return;
+  const updated: LibraryEntry = {
+    ...entry,
+    ...patch,
+    dateModified: new Date().toISOString(),
+  };
+  try {
+    ls()?.setItem(ENTRY_PREFIX + id, JSON.stringify(updated));
+  } catch {}
+}
+
+/** Replace the PGN of a specific game within an entry (e.g. after user makes moves). */
+export function updateGame(entryId: string, gameId: string, pgn: string): void {
+  const entry = getEntry(entryId);
+  if (!entry) return;
+  const games = entry.games.map((g) =>
+    g.id === gameId ? { ...g, pgn } : g
+  );
+  const updated: LibraryEntry = {
+    ...entry,
+    games,
+    dateModified: new Date().toISOString(),
+  };
+  try {
+    ls()?.setItem(ENTRY_PREFIX + entryId, JSON.stringify(updated));
+  } catch {}
+}
+
+// ── Session ───────────────────────────────────────────────────────────────────
+
+export function saveSession(session: SessionState): void {
+  try {
+    ls()?.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {}
+}
+
+export function loadSession(): SessionState | null {
+  try {
+    const raw = ls()?.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as SessionState) : null;
   } catch {
-    // Ignore
+    return null;
   }
+}
+
+export function clearSession(): void {
+  try {
+    ls()?.removeItem(SESSION_KEY);
+  } catch {}
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+export function getStorageStats(): {
+  entryCount: number;
+  gameCount: number;
+  estimatedBytes: number;
+} {
+  const entries = getAllEntries();
+  const gameCount = entries.reduce((sum, e) => sum + e.games.length, 0);
+  let estimatedBytes = 0;
+  try {
+    const storage = ls();
+    if (storage) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && (key.startsWith(ENTRY_PREFIX) || key === INDEX_KEY || key === SESSION_KEY)) {
+          estimatedBytes += (storage.getItem(key)?.length ?? 0) * 2;
+        }
+      }
+    }
+  } catch {}
+  return { entryCount: entries.length, gameCount, estimatedBytes };
+}
+
+// ── Legacy compat shim (used by nothing after this pass, kept for safety) ─────
+
+/** @deprecated Use saveEntry instead */
+export interface StoredGame {
+  id: string;
+  pgn: string;
+  metadata: Record<string, unknown>;
+  dateSaved: string;
+  source: 'played' | 'imported';
 }

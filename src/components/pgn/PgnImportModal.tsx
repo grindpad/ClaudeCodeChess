@@ -13,13 +13,15 @@ import {
 import { useRouter } from 'expo-router';
 import { useChessStore } from '../../store';
 import { parseMultiPgn } from '../../pgn/pgnParser';
+import { saveEntry } from '../../storage/gameStorage';
+import type { StoredGameRecord } from '../../storage/storageTypes';
 
 export default function PgnImportModal() {
   const router = useRouter();
   const visible = useChessStore((s) => s.pgnImportModalVisible);
   const closePgnImport = useChessStore((s) => s.closePgnImport);
   const loadPgn = useChessStore((s) => s.loadPgn);
-  const setPendingImportGames = useChessStore((s) => s.setPendingImportGames);
+  const setActiveLibraryGame = useChessStore((s) => s.setActiveLibraryGame);
 
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -37,25 +39,53 @@ export default function PgnImportModal() {
       return;
     }
 
+    // Auto-save all valid games as a LibraryEntry
+    const gameRecords: Omit<StoredGameRecord, 'entryId'>[] = games.map((g) => ({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + g.index,
+      pgn: g.pgn,
+      white: g.white,
+      black: g.black,
+      event: g.event,
+      date: g.date,
+      result: g.result,
+      plyCount: g.plyCount,
+      hasAnnotations: g.hasAnnotations,
+      indexInEntry: g.index,
+    }));
+
+    const title = games[0].event && games[0].event !== '?'
+      ? games[0].event
+      : games.length === 1
+        ? `${games[0].white ?? '?'} vs ${games[0].black ?? '?'}`
+        : `${games.length} games`;
+
+    const entryId = saveEntry({
+      title,
+      source: 'imported',
+      games: gameRecords as StoredGameRecord[],
+    });
+
     const warn = parseErrors.length > 0
       ? `${parseErrors.length} game${parseErrors.length !== 1 ? 's' : ''} could not be parsed`
       : null;
 
+    setError(null);
+    setText('');
+    closePgnImport();
+
     if (games.length === 1) {
       loadPgn(games[0].pgn);
-      setError(null);
+      setActiveLibraryGame(entryId, gameRecords[0].id);
       setWarning(null);
-      setText('');
-      closePgnImport();
     } else {
-      setPendingImportGames(games);
-      setError(null);
       setWarning(null);
-      setText('');
-      closePgnImport();
       router.push({
         pathname: '/import-select',
-        params: { errorCount: String(parseErrors.length), firstError: parseErrors[0] ?? '' },
+        params: {
+          entryId,
+          errorCount: String(parseErrors.length),
+          firstError: parseErrors[0] ?? '',
+        },
       });
     }
     if (warn) setWarning(warn);

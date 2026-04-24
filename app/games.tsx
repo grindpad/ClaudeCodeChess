@@ -1,12 +1,14 @@
 /**
- * All Games screen (C4) — scrollable list of saved games.
+ * All Games — library browser.
  *
- * Each row: White vs Black | date | source badge (played/imported)
- * Tap → load game and go back to board
- * Swipe left → delete with confirmation
+ * Shows all LibraryEntry items sorted by dateModified (newest first).
+ * Single-game entries: tap to load directly.
+ * Multi-game entries: tap to open library-entry drill-down.
+ * Swipe left to delete. Export action per entry.
+ * Footer shows storage stats.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -18,61 +20,110 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { getAllGames, deleteGame, type StoredGame } from '../src/storage/gameStorage';
+import { getAllEntries, deleteEntry, getStorageStats } from '../src/storage/gameStorage';
+import type { LibraryEntry } from '../src/storage/storageTypes';
 import { useChessStore } from '../src/store';
 import { exportPgn } from '../src/components/board/Sidebar';
+
+function relativeDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 export default function GamesScreen() {
   const router = useRouter();
   const loadPgn = useChessStore((s) => s.loadPgn);
-  const [games, setGames] = useState<StoredGame[]>(() => getAllGames());
+  const setActiveLibraryGame = useChessStore((s) => s.setActiveLibraryGame);
+  const hasUnsavedChanges = useChessStore((s) => s.hasUnsavedChanges);
+
+  const [entries, setEntries] = useState<LibraryEntry[]>(() => getAllEntries());
+  const [stats, setStats] = useState(() => getStorageStats());
+
+  const refresh = useCallback(() => {
+    setEntries(getAllEntries());
+    setStats(getStorageStats());
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, []);
 
   const handleLoad = useCallback(
-    (game: StoredGame) => {
-      try {
-        loadPgn(game.pgn);
-        router.back();
-      } catch {
-        Alert.alert('Error', 'Could not load this game.');
+    (entry: LibraryEntry) => {
+      if (entry.games.length === 0) return;
+
+      const doLoad = () => {
+        if (entry.games.length === 1) {
+          try {
+            loadPgn(entry.games[0].pgn);
+            setActiveLibraryGame(entry.id, entry.games[0].id);
+            router.back();
+          } catch {
+            Alert.alert('Error', 'Could not load this game.');
+          }
+        } else {
+          router.push({ pathname: '/library-entry', params: { entryId: entry.id } });
+        }
+      };
+
+      if (hasUnsavedChanges) {
+        Alert.alert(
+          'Unsaved Changes',
+          'You have unsaved moves. Load this game anyway?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Load Game', style: 'destructive', onPress: doLoad },
+          ]
+        );
+      } else {
+        doLoad();
       }
     },
-    [loadPgn, router]
+    [loadPgn, setActiveLibraryGame, hasUnsavedChanges, router]
   );
 
-  const handleExport = useCallback(async (game: StoredGame) => {
+  const handleExport = useCallback(async (entry: LibraryEntry) => {
     try {
-      const meta = game.metadata ?? {};
-      // Build a minimal PgnMetadata-compatible object for the filename helper
-      await exportPgn(game.pgn, {
-        white: meta.white ?? null,
-        black: meta.black ?? null,
-        date: meta.date ?? null,
-        event: null, site: null, round: null, result: null,
-        whiteElo: null, blackElo: null, eco: null, opening: null,
-        timeControl: null, annotator: null, rawTags: {},
-      });
+      const pgn = entry.games.map((g) => g.pgn).join('\n\n');
+      await exportPgn(pgn, null);
     } catch {
-      Alert.alert('Export failed', 'Could not share this game.');
+      Alert.alert('Export failed', 'Could not share this entry.');
     }
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
-    Alert.alert('Delete game', 'Remove this game from storage?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          deleteGame(id);
-          setGames((prev) => prev.filter((g) => g.id !== id));
+  const handleDelete = useCallback((entry: LibraryEntry) => {
+    Alert.alert(
+      'Delete',
+      `Remove "${entry.title}" from library?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteEntry(entry.id);
+            refresh();
+          },
         },
-      },
-    ]);
-  }, []);
+      ]
+    );
+  }, [refresh]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
@@ -81,40 +132,48 @@ export default function GamesScreen() {
         >
           <Text style={styles.backBtnText}>{'‹ Back'}</Text>
         </Pressable>
-        <Text style={styles.title}>All Games</Text>
+        <Text style={styles.title}>Library</Text>
         <View style={styles.headerRight} />
       </View>
 
-      {/* List */}
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {games.length === 0 && (
-          <Text style={styles.emptyText}>No saved games yet.{'\n'}Save a game from the board menu.</Text>
-        )}
-        {games.map((game) => (
-          <GameRow
-            key={game.id}
-            game={game}
-            onPress={() => handleLoad(game)}
-            onDelete={() => handleDelete(game.id)}
-            onExport={() => handleExport(game)}
+        {entries.length === 0 ? (
+          <Text style={styles.emptyText}>
+            {'No saved games yet.\nSave a game from the board menu.'}
+          </Text>
+        ) : null}
+
+        {entries.map((entry) => (
+          <EntryRow
+            key={entry.id}
+            entry={entry}
+            onPress={() => handleLoad(entry)}
+            onDelete={() => handleDelete(entry)}
+            onExport={() => handleExport(entry)}
           />
         ))}
+
+        {entries.length > 0 ? (
+          <Text style={styles.statsText}>
+            {stats.entryCount} {stats.entryCount === 1 ? 'entry' : 'entries'} · {stats.gameCount} {stats.gameCount === 1 ? 'game' : 'games'} · {formatBytes(stats.estimatedBytes)}
+          </Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ── Game row with swipe-to-delete ─────────────────────────────────────────────
+// ── Entry row with swipe-to-delete ────────────────────────────────────────────
 
 const DELETE_THRESHOLD = 80;
 
-function GameRow({
-  game,
+function EntryRow({
+  entry,
   onPress,
   onDelete,
   onExport,
 }: {
-  game: StoredGame;
+  entry: LibraryEntry;
   onPress: () => void;
   onDelete: () => void;
   onExport: () => void;
@@ -123,12 +182,8 @@ function GameRow({
   const touchStartX = useRef(0);
   const swiping = useRef(false);
 
-  const white = game.metadata?.white ?? '?';
-  const black = game.metadata?.black ?? '?';
-  const event = game.metadata?.event;
-  const date = game.dateSaved
-    ? new Date(game.dateSaved).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    : '';
+  const isMulti = entry.games.length > 1;
+  const topGame = entry.games[0];
 
   const handleTouchStart = (e: any) => {
     touchStartX.current = e.nativeEvent.pageX;
@@ -138,34 +193,25 @@ function GameRow({
   const handleTouchMove = (e: any) => {
     const dx = e.nativeEvent.pageX - touchStartX.current;
     if (!swiping.current && dx < -8) swiping.current = true;
-    if (swiping.current) {
-      translateX.setValue(Math.min(0, dx));
-    }
+    if (swiping.current) translateX.setValue(Math.min(0, dx));
   };
 
   const handleTouchEnd = () => {
     if (!swiping.current) return;
-    // @ts-ignore — _value is the current Animated value
     const currentX = (translateX as any)._value;
     if (currentX < -DELETE_THRESHOLD) {
-      // Snap to reveal delete zone, then confirm
       Animated.timing(translateX, {
         toValue: -DELETE_THRESHOLD,
         duration: 100,
         useNativeDriver: true,
       }).start(() => onDelete());
     } else {
-      Animated.spring(translateX, {
-        toValue: 0,
-        useNativeDriver: true,
-        bounciness: 6,
-      }).start();
+      Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
     }
   };
 
   return (
     <View style={styles.rowWrapper}>
-      {/* Delete hint behind the row */}
       <View style={styles.deleteHint}>
         <Text style={styles.deleteHintText}>Delete</Text>
       </View>
@@ -182,28 +228,31 @@ function GameRow({
           onPress={onPress}
         >
           <View style={styles.rowMain}>
-            <Text style={styles.players} numberOfLines={1}>
-              {white} <Text style={styles.vsText}>vs</Text> {black}
-            </Text>
-            {event ? (
-              <Text style={styles.eventText} numberOfLines={1}>{event}</Text>
+            <Text style={styles.entryTitle} numberOfLines={1}>{entry.title}</Text>
+            {isMulti ? (
+              <Text style={styles.gameCount}>{entry.games.length} games</Text>
+            ) : topGame ? (
+              <Text style={styles.gameCount} numberOfLines={1}>
+                {topGame.white ?? '?'} vs {topGame.black ?? '?'}
+              </Text>
             ) : null}
-            <Text style={styles.dateText}>{date}</Text>
+            <Text style={styles.dateText}>{relativeDate(entry.dateModified)}</Text>
           </View>
-          <View style={styles.rowActions}>
+
+          <View style={styles.rowRight}>
             <Pressable
               style={({ pressed }) => [styles.exportBtn, pressed && styles.exportBtnPressed]}
               onPress={onExport}
-              accessibilityLabel="Export PGN"
               hitSlop={8}
             >
               <Text style={styles.exportBtnText}>↑</Text>
             </Pressable>
-            <View style={[styles.badge, game.source === 'imported' && styles.badgeImported]}>
+            <View style={[styles.badge, entry.source === 'imported' && styles.badgeImported]}>
               <Text style={styles.badgeText}>
-                {game.source === 'imported' ? 'PGN' : 'Played'}
+                {entry.source === 'imported' ? 'PGN' : 'Played'}
               </Text>
             </View>
+            {isMulti ? <Text style={styles.chevron}>›</Text> : null}
           </View>
         </Pressable>
       </Animated.View>
@@ -211,7 +260,7 @@ function GameRow({
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -230,6 +279,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     minWidth: 60,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backBtnPressed: {
     opacity: 0.6,
@@ -249,15 +300,14 @@ const styles = StyleSheet.create({
   headerRight: {
     minWidth: 60,
   },
-
   list: {
     flex: 1,
   },
   listContent: {
     padding: 12,
     gap: 8,
+    paddingBottom: 32,
   },
-
   emptyText: {
     color: '#444',
     fontSize: 14,
@@ -265,12 +315,16 @@ const styles = StyleSheet.create({
     marginTop: 48,
     lineHeight: 22,
   },
-
-  // Row
+  statsText: {
+    color: '#333',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 16,
+  },
   rowWrapper: {
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#e57373', // delete zone color
+    backgroundColor: '#e57373',
   },
   deleteHint: {
     position: 'absolute',
@@ -303,16 +357,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  players: {
+  entryTitle: {
     color: '#F0F0F0',
     fontSize: 15,
     fontWeight: '600',
   },
-  vsText: {
-    color: '#555',
-    fontWeight: '400',
-  },
-  eventText: {
+  gameCount: {
     color: '#888',
     fontSize: 12,
   },
@@ -320,14 +370,14 @@ const styles = StyleSheet.create({
     color: '#555',
     fontSize: 12,
   },
-  rowActions: {
+  rowRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   exportBtn: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     borderRadius: 8,
     backgroundColor: '#2E2E2E',
     alignItems: 'center',
@@ -358,5 +408,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  chevron: {
+    color: '#555',
+    fontSize: 18,
+    fontWeight: '300',
+    marginLeft: 2,
   },
 });
