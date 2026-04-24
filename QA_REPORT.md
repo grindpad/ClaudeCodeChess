@@ -546,7 +546,7 @@ EngineController
 |----|---------|----------------|--------|
 | FEATURE-A (Part 1) | Engine panel in swipeable panels | Already implemented in prior session — `PanelTabs` already includes all 3 panels (Notation/Explorer/Engine) with swipe navigation. | ALREADY DONE |
 | FEATURE-A (Part 2) | Panel selector popup button | Converted the inline panel label in `NavigationControls` from a `Text` to a tappable `Pressable` that opens a `Modal` popup. Popup shows all 3 panel options with a checkmark on the active one. Tapping an option calls `onPanelChange` and dismisses. `onPanelChange` prop added to `NavigationControls`; wired in `BoardContainer`. | IMPLEMENTED |
-| FEATURE-B | Multi-game PGN import with game selector | Added `parseMultiPgn()` to `pgnParser.ts` using `@mliebelt/pgn-parser`'s `parseGames` export. `PgnImportModal` detects multi-game PGNs and routes to new `app/import-select.tsx` screen (full screen list, greyscale theme). Single-game imports load directly as before. `pendingImportGames` state added to `uiSlice`. | IMPLEMENTED |
+| FEATURE-B | Multi-game PGN import with game selector | Replaced `@mliebelt/pgn-parser` with a hand-written tokeniser + recursive-descent parser (see Parser Overhaul section). `parseMultiPgn()` now returns `ParseResult { games, parseErrors }`. `PgnImportModal` shows a non-blocking warning when some games failed. `import-select.tsx` shows enhanced row info (move count, annotation badge) and a dismissible error banner. | UPDATED |
 | FEATURE-C (sidebar) | Save Game action sheet with export option | `handleSaveGame` in `Sidebar.tsx` now shows a 3-option `Alert` (`Save to Library` / `Export as PGN` / Cancel). `exportPgn()` helper uses Web Share API with `.pgn` File object, falls back to blob download anchor on desktop browsers. | IMPLEMENTED |
 | FEATURE-C (All Games) | Export button on each game row | Each row in `app/games.tsx` has a `↑` share button (44pt touch target). Tapping it calls `exportPgn` with the stored PGN and metadata. | IMPLEMENTED |
 
@@ -555,5 +555,75 @@ EngineController
 - **BUG-A (piece rotation):** The `renderPiece` counter-rotation approach should make pieces upright when flipped. Verify on device that pieces render correctly and chess piece image quality is acceptable (same PNGs as the library uses).
 - **BUG-B (drag-to-castle when flipped):** When the board container is rotated 180°, RNGH pan gesture `translationX/Y` may be reported in screen-space (not container-space), causing drag movements to map to wrong squares. Verify drag-to-castle works when board is in flipped orientation.
 - **BUG-C (measureLayout on web):** `View.measureLayout` is implemented in React Native Web but may behave differently than native. Verify smooth scroll-to-active-move on both web and native.
-- **FEATURE-B (multi-game PGN):** `splitPgnIntoGames` splits on `[` tag lines. Test with PGN files from different sources (Lichess export, ChessBase, etc.) which may have different line endings or formatting.
+- **FEATURE-B (multi-game PGN):** Parser overhaul validated against three real fixture files (see Parser Overhaul section). Remaining uncertainty: games that contain zero moves and no result token (tags-only stub games) are not split from the preceding game; this edge case does not occur in practice.
 - **FEATURE-C (Web Share API):** `navigator.canShare({ files: [file] })` returns false on desktop Chrome/Firefox (they don't support file sharing). The blob download fallback will trigger instead. Verify on mobile Safari/Chrome that the native share sheet appears with the `.pgn` file.
+
+---
+
+## Parser Overhaul — FEATURE-B-2
+
+### Summary
+
+`@mliebelt/pgn-parser` removed and replaced with a hand-written tokeniser +
+recursive-descent parser in `src/pgn/pgnParser.ts`.
+
+**Root cause of original failures**
+
+The old `splitPgnIntoGames()` split on *every* line starting with `[`, regardless
+of whether that line was a tag for a new game or just the next header tag in the
+same game's STR block. A seven-tag game header generated seven spurious "games"
+before any moves were seen. This caused `@mliebelt/pgn-parser`'s `parseGame()`
+to receive single-tag fragments and throw, silently swallowing the entire file.
+
+### Fixture files validated (node scripts/test-parser.js — all PASS)
+
+| Fixture | Games | Key edge cases covered |
+|---------|-------|------------------------|
+| `Aljechin e5, Nc3, dxc3_Schwarz_2026 (1).pgn` | 1 | BOM (EF BB BF), CRLF-only line endings, multi-line comment containing `0-1 (65) Bacrot,E...` game-reference text, 2-level nested variations, NAGs including $14/$16/$18 |
+| `Scandinavisch 3.. Dd6 (1).pgn` | 2 | Two identical games, CRLF line endings, 11 variation branches, 4-level nesting depth, inline-compressed moves |
+| `EN - Vienna Game for White - Top-Level Repertoire.pgn` | 42 | BOM, mixed CRLF+LF (260 CRLF + 638 LF), `[%csl]`/`[%cal]`/`[%evp]` graphic annotations stripped from comments, NAGs $132 and $146, extra tags (GameId, EventDate, SourceVersionDate, PlyCount), 4-level nesting, incomplete games ending with `*` |
+
+### Edge cases handled
+
+- **BOM stripping** — `preprocess()` checks `charCodeAt(0) === 0xFEFF` before any
+  other processing. Validated: Alekhine and Vienna files both have UTF-8 BOM.
+- **CRLF normalisation** — `\r\n` → `\n`, then `\r` → `\n`. Validated: Vienna
+  file has genuinely mixed endings; both types normalised correctly.
+- **Game splitting** — fixed algorithm tracks *comment depth* (so `{` inside tag
+  values and multi-line comments never count) and *seenMoves* flag (so
+  consecutive STR tags never trigger a false split).
+- **`[%...]` annotation stripping** — all `[%csl]`, `[%cal]`, `[%evp]` (and any
+  future `[%xxx]`) stripped from comment text before storage. Multi-line
+  comments whitespace-normalised to single line.
+- **Multi-line comments** — tokeniser scans raw bytes from `{` to `}`, correctly
+  spanning newlines. The Bacrot game reference `{0-1 (65) Bacrot,E...\n(2601)...}`
+  is captured and stored intact (minus graphic annotations).
+- **NAGs $100–$255** — tokeniser emits `{ type:'nag', value: N }` for any `$N`.
+  Vienna game 2 contains $146 (novelty) and $132 (counterplay) — both present
+  in parsed output.
+- **Inline `!?!` suffixes** — `e4!`, `Nf3?!` etc. split into SAN + NAG tokens.
+- **Castling** — both `O-O`/`O-O-O` and non-standard `0-0`/`0-0-0` normalised
+  before passing to chess.js.
+- **Per-game error isolation** — `parseMultiPgn()` wraps each game in try/catch;
+  one illegal move stops only that line, not the batch.
+- **`ParseResult` return type** — `{ games: ImportableGame[], parseErrors: string[] }`.
+  `PgnImportModal` shows amber warning when `parseErrors.length > 0`.
+  `import-select.tsx` shows a dismissible banner with the error count.
+- **Enhanced game selector rows** — `ImportableGame` now carries `plyCount` and
+  `hasAnnotations`. Selector shows move count and "ann" badge.
+
+### `ImportableGame` type additions
+
+```ts
+plyCount: number | null       // from PlyCount tag, else estimated
+hasAnnotations: boolean       // true if moves text contains { ( ! ? $
+```
+
+### Known remaining limitations
+
+- Tags-only stub games (no moves, no result `*`) are not detected as game
+  boundaries; they attach to the preceding game. Does not occur in real files.
+- `plyCount` estimate (highest move number × 2) over-counts for games ending
+  on a black move, and may include variation moves if PlyCount tag is absent.
+- Illegal move in PGN logs a `console.warn` and stops that *line* only — the
+  rest of the game (other variations) continues parsing normally.

@@ -1,12 +1,14 @@
 /**
  * ImportSelect — full-screen game selector for multi-game PGN imports.
  *
- * Shown when a PGN file containing multiple games is imported.
- * Each row shows: #, White vs Black, Event, Date, Result.
- * Tapping a row loads that game and returns to the board.
+ * Each row shows: #, White vs Black, Event, Date, Result, move count,
+ * and an annotation badge when the game has comments / variations.
+ *
+ * A dismissible warning banner appears at the top when some games in the
+ * file could not be parsed (errorCount route param > 0).
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -16,17 +18,23 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useChessStore } from '../src/store';
 import type { ImportableGame } from '../src/pgn/pgnParser';
 
 export default function ImportSelectScreen() {
   const router = useRouter();
+  const { errorCount, firstError } = useLocalSearchParams<{
+    errorCount?: string;
+    firstError?: string;
+  }>();
   const pendingImportGames = useChessStore((s) => s.pendingImportGames);
   const setPendingImportGames = useChessStore((s) => s.setPendingImportGames);
   const loadPgn = useChessStore((s) => s.loadPgn);
 
   const games = pendingImportGames ?? [];
+  const numErrors = parseInt(errorCount ?? '0', 10);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const handleSelect = useCallback(
     (game: ImportableGame) => {
@@ -65,6 +73,19 @@ export default function ImportSelectScreen() {
         {games.length} game{games.length !== 1 ? 's' : ''} found in file
       </Text>
 
+      {/* Parse-error warning banner */}
+      {numErrors > 0 && !bannerDismissed ? (
+        <View style={styles.warningBanner}>
+          <Text style={styles.warningText}>
+            {numErrors} game{numErrors !== 1 ? 's' : ''} could not be parsed
+            {firstError ? ` — ${firstError}` : ''}
+          </Text>
+          <Pressable onPress={() => setBannerDismissed(true)} hitSlop={8}>
+            <Text style={styles.warningDismiss}>✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {games.map((game) => (
           <GameRow key={game.index} game={game} onPress={() => handleSelect(game)} />
@@ -77,15 +98,19 @@ export default function ImportSelectScreen() {
 function GameRow({ game, onPress }: { game: ImportableGame; onPress: () => void }) {
   const white = game.white ?? '?';
   const black = game.black ?? '?';
-  const event = game.event;
-  const date = game.date;
+  const showEvent = game.event && game.event !== '?';
+  const showDate = game.date && game.date !== '????.??.??';
   const result = game.result;
 
   const resultColor =
-    result === '1-0' ? '#a0c880' :
-    result === '0-1' ? '#e08080' :
-    result === '1/2-1/2' ? '#8888aa' :
-    '#666';
+    result === '1-0'       ? '#a0c880' :
+    result === '0-1'       ? '#e08080' :
+    result === '1/2-1/2'  ? '#8888aa' :
+                            '#666';
+
+  const moveLabel = game.plyCount != null
+    ? `${Math.ceil(game.plyCount / 2)} moves`
+    : null;
 
   return (
     <Pressable
@@ -98,14 +123,24 @@ function GameRow({ game, onPress }: { game: ImportableGame; onPress: () => void 
       </View>
 
       <View style={styles.rowMain}>
-        <Text style={styles.players} numberOfLines={1}>
-          {white} <Text style={styles.vsText}>vs</Text> {black}
-        </Text>
-        {event ? (
-          <Text style={styles.metaText} numberOfLines={1}>{event}</Text>
+        <View style={styles.playersRow}>
+          <Text style={styles.players} numberOfLines={1}>
+            {white} <Text style={styles.vsText}>vs</Text> {black}
+          </Text>
+          {game.hasAnnotations ? (
+            <View style={styles.annotBadge}>
+              <Text style={styles.annotText}>ann</Text>
+            </View>
+          ) : null}
+        </View>
+        {showEvent ? (
+          <Text style={styles.metaText} numberOfLines={1}>{game.event}</Text>
         ) : null}
-        {date ? (
-          <Text style={styles.metaText} numberOfLines={1}>{date}</Text>
+        {showDate ? (
+          <Text style={styles.metaText} numberOfLines={1}>{game.date}</Text>
+        ) : null}
+        {moveLabel ? (
+          <Text style={styles.moveCountText}>{moveLabel}</Text>
         ) : null}
       </View>
 
@@ -164,6 +199,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#2E2E2E',
   },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2A1F00',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#4A3800',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  warningText: {
+    flex: 1,
+    color: '#D4A017',
+    fontSize: 12,
+  },
+  warningDismiss: {
+    color: '#888',
+    fontSize: 14,
+    paddingHorizontal: 4,
+  },
   list: {
     flex: 1,
   },
@@ -197,7 +252,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  playersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   players: {
+    flex: 1,
     color: '#F0F0F0',
     fontSize: 14,
     fontWeight: '600',
@@ -206,9 +267,24 @@ const styles = StyleSheet.create({
     color: '#444',
     fontWeight: '400',
   },
+  annotBadge: {
+    backgroundColor: '#2A2A3A',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  annotText: {
+    color: '#6688CC',
+    fontSize: 10,
+    fontWeight: '600',
+  },
   metaText: {
     color: '#666',
     fontSize: 11,
+  },
+  moveCountText: {
+    color: '#444',
+    fontSize: 10,
   },
   resultBadge: {
     minWidth: 52,

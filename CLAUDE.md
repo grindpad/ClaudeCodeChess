@@ -23,7 +23,7 @@ Commit and push to GitHub regularly throughout all work sessions. Every meaningf
 | Framework | Expo SDK 55 + Expo Router (file-based routing) |
 | Board | react-native-chessboard |
 | Chess logic | chess.js ^1.x |
-| PGN parsing | @mliebelt/pgn-parser (NOT chess.js — it drops variations/NAGs/comments) |
+| PGN parsing | Hand-written tokeniser + recursive-descent parser in `src/pgn/pgnParser.ts` |
 | State | Zustand ^5.x with `subscribeWithSelector` middleware |
 | Engine | Stockfish 18 single-threaded WASM (`public/stockfish-18-single.js`) |
 | Gestures | react-native-gesture-handler + react-native-reanimated |
@@ -82,7 +82,7 @@ src/
     engineTypes.ts          # Re-exports from src/types/engine.ts
 
   pgn/
-    pgnParser.ts            # @mliebelt/pgn-parser AST → MoveTree (recursive, FENs computed)
+    pgnParser.ts            # Hand-written tokeniser + recursive-descent parser → MoveTree
     pgnSerializer.ts        # MoveTree → PGN string (7-tag STR, variations, NAGs, comments)
 
   api/
@@ -138,7 +138,7 @@ Each `MoveNode` stores its resulting FEN at creation time. Navigation is O(1) �
 - External FEN change (navigation, PGN load) → ref is `false` → call `boardRef.current?.resetBoard(fen)`.
 
 ### PGN Parsing
-**Do not use `chess.js` `loadPgn()`** — it silently drops all variations, NAGs, and comments. Always use `@mliebelt/pgn-parser` to get a full AST, then transform via `pgnParser.ts`.
+**Do not use `chess.js` `loadPgn()`** — it silently drops all variations, NAGs, and comments. Always use the hand-written parser in `pgnParser.ts` which handles BOM, CRLF, `[%csl]`/`[%cal]` annotations, NAGs $0–$255, and multi-game files with correct boundary detection.
 
 ### Notation Rendering
 Inline flow layout (not a FlatList). `renderLine()` in `VariationBlock.tsx` returns an array of `MoveToken`, `CommentBlock`, and nested `VariationBlock` components. A zero-height `View` with `flexBasis: '100%'` is used as a line-break within the wrapping flex container.

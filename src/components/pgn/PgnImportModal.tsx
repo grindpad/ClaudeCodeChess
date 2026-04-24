@@ -23,29 +23,42 @@ export default function PgnImportModal() {
 
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const handleImport = () => {
     if (!text.trim()) return;
-    try {
-      const games = parseMultiPgn(text.trim());
 
-      if (games.length === 1) {
-        // Single game — load immediately
-        loadPgn(games[0].pgn);
-        setError(null);
-        setText('');
-        closePgnImport();
-      } else {
-        // Multiple games — show selector screen
-        setPendingImportGames(games);
-        setError(null);
-        setText('');
-        closePgnImport();
-        router.push('/import-select');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid PGN');
+    const { games, parseErrors } = parseMultiPgn(text.trim());
+
+    if (games.length === 0) {
+      setError(parseErrors.length > 0
+        ? `No valid games found. ${parseErrors[0]}`
+        : 'No valid games found in this PGN.');
+      return;
     }
+
+    const warn = parseErrors.length > 0
+      ? `${parseErrors.length} game${parseErrors.length !== 1 ? 's' : ''} could not be parsed`
+      : null;
+
+    if (games.length === 1) {
+      loadPgn(games[0].pgn);
+      setError(null);
+      setWarning(null);
+      setText('');
+      closePgnImport();
+    } else {
+      setPendingImportGames(games);
+      setError(null);
+      setWarning(null);
+      setText('');
+      closePgnImport();
+      router.push({
+        pathname: '/import-select',
+        params: { errorCount: String(parseErrors.length), firstError: parseErrors[0] ?? '' },
+      });
+    }
+    if (warn) setWarning(warn);
   };
 
   const handleClose = () => {
@@ -88,6 +101,7 @@ export default function PgnImportModal() {
           </ScrollView>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {warning && !error ? <Text style={styles.warningText}>{warning}</Text> : null}
 
           <View style={styles.actions}>
             <Pressable style={styles.cancelBtn} onPress={handleClose}>
@@ -158,6 +172,11 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#E84855',
+    fontSize: 13,
+    marginTop: 8,
+  },
+  warningText: {
+    color: '#D4A017',
     fontSize: 13,
     marginTop: 8,
   },
