@@ -38,17 +38,6 @@ function getLine(tree: MoveTree, path: NavigationPath): MoveNode[] {
   return line;
 }
 
-function localAdvancePath(tree: MoveTree, path: NavigationPath): NavigationPath {
-  if (path.length === 0) {
-    return tree.mainLine.length > 0 ? [{ index: 0 }] : path;
-  }
-  const line = getLine(tree, path);
-  const lastSeg = path[path.length - 1];
-  if (lastSeg.index + 1 < line.length) {
-    return [...path.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }];
-  }
-  return path;
-}
 
 function formatMoveLabel(node: MoveNode): string {
   return node.color === 'w'
@@ -67,7 +56,10 @@ function buildContinuations(
 
   if (!nextNode || nextNode.variations.length === 0) return null;
 
-  const advancedPath = localAdvancePath(tree, navigationPath);
+  // Explicit spec formula — same as what a directly-tapped variation token uses
+  const mainlinePath: NavigationPath = lastSeg !== null
+    ? [...navigationPath.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }]
+    : [{ index: 0 }];
 
   const options: VariationOption[] = [];
 
@@ -77,7 +69,7 @@ function buildContinuations(
     san: formatMoveLabel(nextNode),
     nag: nagsToString(nextNode.nags) || null,
     commentPreview: nextNode.comment ?? null,
-    navigationPath: advancedPath,
+    navigationPath: mainlinePath,
   });
 
   // Each variation of the next node
@@ -85,7 +77,9 @@ function buildContinuations(
     const varLine = nextNode.variations[vi];
     const firstNode = varLine[0];
     if (!firstNode) continue;
-    const varPath: NavigationPath = [...advancedPath, { variationIndex: vi, index: 0 }];
+    const varPath: NavigationPath = lastSeg !== null
+      ? [...navigationPath.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }, { variationIndex: vi, index: 0 }]
+      : [{ index: 0 }, { variationIndex: vi, index: 0 }];
     options.push({
       label: `Variation ${vi + 1}`,
       san: formatMoveLabel(firstNode),
@@ -95,7 +89,7 @@ function buildContinuations(
     });
   }
 
-  return { options, mainlinePath: advancedPath };
+  return { options, mainlinePath };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -133,8 +127,8 @@ export default function NavigationControls({ activePanel, onPanelChange }: Navig
   };
 
   const handlePickerSelect = (path: NavigationPath) => {
-    setPickerVisible(false);
     navigateToNode(path);
+    setPickerVisible(false);
   };
 
   const handlePickerDismiss = () => {

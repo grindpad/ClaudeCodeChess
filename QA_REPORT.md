@@ -322,6 +322,33 @@ Implement `enterVariation` properly so the interface contract is met and future 
 
 ---
 
+### BUG-008 — Variation picker selection navigates to wrong position or does nothing
+**Scenario:** FEATURE-A (▶ variation picker)
+**File:** `src/components/board/NavigationControls.tsx`
+**Root Cause (two issues):**
+
+1. **Wrong handler order in `handlePickerSelect`:** The original code called `setPickerVisible(false)` before `navigateToNode(path)`. On iOS Safari PWA, closing the modal first can interrupt subsequent event processing in the same React batch, causing the navigation call to be dropped or deferred. Spec requires navigate-first, then close.
+
+2. **`buildContinuations` used `localAdvancePath` instead of the explicit spec formula:** `localAdvancePath` traverses `getLine(tree, path)` to compute the next path, whereas `MoveToken` navigation paths are built by the parser using the exact `PathSegment` structure. When a variation path was computed as `[...advancedPath, { variationIndex: vi, index: 0 }]` with `advancedPath` from `localAdvancePath`, any edge case in `localAdvancePath` (path length 0, line boundary) could produce a path that doesn't match what `navigateToNode` / `resolveNode` expects.
+
+**Fix applied (2026-04-25):**
+- `handlePickerSelect`: swapped to `navigateToNode(path)` first, then `setPickerVisible(false)`.
+- `buildContinuations`: replaced `localAdvancePath` with the exact spec formula:
+  ```ts
+  const mainlinePath: NavigationPath = lastSeg !== null
+    ? [...navigationPath.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }]
+    : [{ index: 0 }];
+  // variation:
+  const varPath: NavigationPath = lastSeg !== null
+    ? [...navigationPath.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }, { variationIndex: vi, index: 0 }]
+    : [{ index: 0 }, { variationIndex: vi, index: 0 }];
+  ```
+- Removed the now-unused `localAdvancePath` helper.
+
+**Status: FIXED**
+
+---
+
 ## Fixed Bugs Summary
 
 | Bug ID | File | Status |
@@ -333,6 +360,7 @@ Implement `enterVariation` properly so the interface contract is met and future 
 | BUG-005 | `src/hooks/useExplorer.ts` | FIXED |
 | BUG-006 | `src/store/slices/engineSlice.ts` | FIXED |
 | BUG-007 | `src/store/slices/gameSlice.ts` | FIXED |
+| BUG-008 | `src/components/board/NavigationControls.tsx` | FIXED |
 
 ---
 
@@ -344,9 +372,9 @@ Implement `enterVariation` properly so the interface contract is met and future 
 
 ## Final Summary
 
-- **Total bugs found:** 7
-- **Total bugs fixed:** 7
-- **UNCERTAIN items:** 1 (N5 — auto-scroll y-position accuracy on web)
+- **Total bugs found:** 8
+- **Total bugs fixed:** 8
+- **UNCERTAIN items:** 1 (N5 — auto-scroll y-position accuracy on web, needs device verify)
 
 ### Patterns Observed
 
