@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MoveNode, NavigationPath } from '../../types/moveTree';
 import MoveToken from './MoveToken';
 import CommentBlock from './CommentBlock';
+
+function containsNodeId(nodes: MoveNode[], id: string): boolean {
+  for (const node of nodes) {
+    if (node.id === id) return true;
+    for (const varLine of node.variations) {
+      if (containsNodeId(varLine, id)) return true;
+    }
+  }
+  return false;
+}
 
 interface VariationBlockProps {
   nodes: MoveNode[];
@@ -25,6 +35,13 @@ export default function VariationBlock({
   // Variations at depth ≥ 2 are collapsible; shallower ones are always visible
   const collapsible = depth >= 2;
   const [collapsed, setCollapsed] = useState(collapsible);
+
+  // Auto-expand when navigation lands inside this block (e.g. via the ▶ picker)
+  useEffect(() => {
+    if (collapsible && collapsed && activeNodeId && containsNodeId(nodes, activeNodeId)) {
+      setCollapsed(false);
+    }
+  }, [activeNodeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (nodes.length === 0) return null;
 
