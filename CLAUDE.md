@@ -35,11 +35,14 @@ Commit and push to GitHub regularly throughout all work sessions. Every meaningf
 
 ```
 app/                        # Expo Router — routing only
-  _layout.tsx               # Root layout; mounts useEngine() + useExplorer()
+  _layout.tsx               # Root layout; mounts useEngine() + useExplorer(); session persistence
   index.tsx                 # Redirects → /(tabs)/board
+  import-select.tsx         # Multi-game picker after PGN import
+  games.tsx                 # Library browser (LibraryEntry rows, swipe-to-delete, export)
+  library-entry.tsx         # Drill-down for multi-game entries
   (tabs)/
     _layout.tsx             # Tab navigator
-    board.tsx               # Main board screen
+    board.tsx               # Main board screen; mounts SaveGameModal
     settings.tsx            # Settings screen
 
 src/
@@ -48,22 +51,30 @@ src/
       BoardContainer.tsx    # Portrait/landscape layout; eval bar + board + panels
       ChessBoardWrapper.tsx # Controlled wrapper around react-native-chessboard
       EvaluationBar.tsx     # Sigmoid cp→% bar; horizontal (portrait) / vertical (landscape)
-      NavigationControls.tsx# ⟪◀▶ + PGN + engine toggle + flip
+      NavigationControls.tsx# ⏮◀▶⇅ nav buttons + panel selector label + variation picker
+      Sidebar.tsx           # Slide-in menu (swipe from left edge); New/Save/Import/Engine/Settings
     notation/
       NotationPanel.tsx     # Inline flow renderer; auto-scrolls to active move
       MoveToken.tsx         # Single tappable move chip (SAN + NAG)
-      VariationBlock.tsx    # Recursive; collapsible at depth ≥ 2
+      VariationBlock.tsx    # Recursive; collapsible at depth ≥ 2; auto-expands on navigation
       CommentBlock.tsx      # Inline comment text
+      VariationPickerModal.tsx # Modal shown by ▶ when next position branches
     explorer/
       ExplorerPanel.tsx     # Loading/error/empty states container
       ExplorerMoveRow.tsx   # Move | freq bar | W%/D%/B% | avg rating; tap → makeMove
       ExplorerEmpty.tsx     # No data / offline / loading state
     pgn/
-      PgnImportModal.tsx    # Paste text or file picker
+      PgnImportModal.tsx    # Paste text or file picker; auto-saves to library on import
+      SaveGameModal.tsx     # Bottom-sheet; White/Black/Event/Date; saves/updates library entry
     shared/
-      PanelTabs.tsx         # Notation / Explorer tab switcher (wraps each in ErrorBoundary)
+      PanelTabs.tsx         # Notation / Explorer / Engine swipeable container (ErrorBoundary each)
       ErrorBoundary.tsx     # React class component; labelled crash fallback + Try Again
       WinRateBar.tsx        # Tricolor W/D/B bar (segments < 4% hidden)
+
+  storage/
+    storageTypes.ts         # StoredGameRecord, LibraryEntry, SessionState types
+    gameStorage.ts          # localStorage CRUD: saveEntry, getEntry, getAllEntries, deleteEntry,
+                            #   updateEntry, updateGame, saveSession, loadSession, clearSession
 
   store/
     index.ts                # Re-exports useChessStore
@@ -73,7 +84,9 @@ src/
       gameSlice.ts          # FEN, move tree, navigation, makeMove, nodeMap
       engineSlice.ts        # Engine output, status, depth, multiPV
       explorerSlice.ts      # Explorer data, LRU cache, loading/error
-      uiSlice.ts            # Panel visibility, board flip, boardTheme, showCoordinates
+      uiSlice.ts            # Panel visibility, board flip, boardTheme, showCoordinates,
+                            #   saveGameModalVisible, activeLibraryEntryId, activeGameId,
+                            #   hasUnsavedChanges
 
   engine/
     stockfishWorker.ts      # Web Worker script (self-contained; uses importScripts)
@@ -104,6 +117,7 @@ src/
     fenUtils.ts             # fenToTurn(), fenToFullMove(), etc.
     nag.ts                  # NAG number → symbol ($1→!, $2→?, etc.)
     platform.ts             # isWasmSupported(), isWeb(), isNative()
+    navigationUtils.ts      # serializeNavigationPath / deserializeNavigationPath (JSON)
 
 public/
   stockfish-18-single.js    # Self-contained Stockfish Web Worker (served at web root)
@@ -142,6 +156,28 @@ Each `MoveNode` stores its resulting FEN at creation time. Navigation is O(1) �
 
 ### Notation Rendering
 Inline flow layout (not a FlatList). `renderLine()` in `VariationBlock.tsx` returns an array of `MoveToken`, `CommentBlock`, and nested `VariationBlock` components. A zero-height `View` with `flexBasis: '100%'` is used as a line-break within the wrapping flex container.
+
+`VariationBlock` at `depth >= 2` is collapsible (starts collapsed). It auto-expands via a `useEffect` on `activeNodeId` — `containsNodeId()` recursively checks whether the active node lives inside the block, and sets `collapsed = false` if so. This ensures navigation via the ▶ variation picker always makes the destination visible.
+
+### Notation Auto-Scroll
+`NotationPanel` uses `measureLayout` relative to an inner `scrollViewContentRef` View (first child of the ScrollView), not the ScrollView itself. On RN Web the ScrollView's outer div shifts with scrolling, so measuring against it gives wrong coordinates. A `userIsScrolling` ref suppresses auto-scroll while the user is manually dragging.
+
+### Variation Picker (▶ button)
+`NavigationControls.handleForward` checks `buildContinuations()` before calling `navigateForward()`. If the next node has variations, a `VariationPickerModal` is shown instead. Path construction in `buildContinuations` uses the explicit `PathSegment` formula (not a helper that traverses the tree) so the resulting paths exactly match what `resolveNode` in the store expects. `handlePickerSelect` calls `navigateToNode(path)` **before** `setPickerVisible(false)` — closing the modal first can drop the navigation call on iOS Safari PWA.
+
+### Panel Swipe
+`PanelTabs` uses a single `PanResponder` created once inside `useRef`. Because the closure would otherwise capture stale `activeTab` and `onTabChange` from the first render, both values are stored in mutable refs (`activeTabRef`, `onTabChangeRef`) that are updated every render and read inside `onPanResponderRelease`.
+
+### Game Library (Persistent Storage)
+`src/storage/gameStorage.ts` manages three localStorage key namespaces:
+- `chess_library_index` — JSON array of `{ id, title, source, dateAdded, dateModified, gameCount }`
+- `chess_library_entry_{id}` — full `LibraryEntry` with all `StoredGameRecord` objects
+- `chess_session` — `SessionState` (pgn, navigationPath, activeLibraryEntryId, activeGameId)
+
+Session is restored on mount in `app/_layout.tsx` via `useSessionPersistence`. PGN import auto-saves to the library before routing. `SaveGameModal` handles both creating new entries and updating existing ones.
+
+### NavigationPath Serialisation
+`NavigationPath` (a `PathSegment[]`) is serialised to/from JSON strings for `localStorage` using `serializeNavigationPath` / `deserializeNavigationPath` in `src/utils/navigationUtils.ts`.
 
 ---
 
