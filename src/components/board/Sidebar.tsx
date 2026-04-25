@@ -6,9 +6,8 @@
  * C2: Contents — New Game, Save Game, Import Game, All Games, Engine, Settings, Flip Board.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import NewGameConfirmModal from './NewGameConfirmModal';
 import { useRouter } from 'expo-router';
 import { useChessStore } from '../../store';
 import type { PgnMetadata } from '../../types/pgn';
@@ -134,6 +134,7 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
   const openPgnImport = useChessStore((s) => s.openPgnImport);
   const openSaveGameModal = useChessStore((s) => s.openSaveGameModal);
   const hasUnsavedChanges = useChessStore((s) => s.hasUnsavedChanges);
+  const saveGameModalVisible = useChessStore((s) => s.saveGameModalVisible);
   const isAnalysing = useChessStore((s) => s.isAnalysing);
   const startAnalysis = useChessStore((s) => s.startAnalysis);
   const stopAnalysis = useChessStore((s) => s.stopAnalysis);
@@ -142,36 +143,56 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
 
   const engineUnavailable = engineStatus === 'unsupported';
 
+  // FIX-1: Custom new-game confirmation modal (replaces Alert.alert)
+  const [newGameModalVisible, setNewGameModalVisible] = useState(false);
+  // True while we're waiting for SaveGameModal to complete a save before starting new game
+  const pendingNewGameRef = useRef(false);
+  const prevSaveModalVisibleRef = useRef(false);
+
+  // Detect SaveGameModal closing after a pending-new-game save request
+  useEffect(() => {
+    const wasOpen = prevSaveModalVisibleRef.current;
+    prevSaveModalVisibleRef.current = saveGameModalVisible;
+    if (wasOpen && !saveGameModalVisible && pendingNewGameRef.current) {
+      pendingNewGameRef.current = false;
+      // If save was completed, hasUnsavedChanges will be false
+      if (!useChessStore.getState().hasUnsavedChanges) {
+        useChessStore.getState().newGame();
+      }
+      // If user cancelled SaveGameModal, hasUnsavedChanges is still true — do nothing
+    }
+  }, [saveGameModalVisible]);
+
   const handleNewGame = () => {
-    onClose();
-    if (hasUnsavedChanges) {
-      Alert.alert(
-        'Unsaved Changes',
-        'You have unsaved moves. Start a new game anyway?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Discard & New Game', style: 'destructive', onPress: () => newGame() },
-        ]
-      );
-    } else if (moveTree) {
-      Alert.alert(
-        'New Game',
-        'Start a new game?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'New Game', style: 'destructive', onPress: () => newGame() },
-        ]
-      );
+    const hasMoves = (moveTree?.mainLine.length ?? 0) > 0;
+    if (hasUnsavedChanges && hasMoves) {
+      // Close sidebar first, then show the custom confirmation modal
+      onClose();
+      setNewGameModalVisible(true);
     } else {
+      // No unsaved changes (or empty board) — reset immediately
+      onClose();
       newGame();
     }
   };
 
+  const handleConfirmSave = () => {
+    setNewGameModalVisible(false);
+    pendingNewGameRef.current = true;
+    openSaveGameModal();
+  };
+
+  const handleConfirmDiscard = () => {
+    setNewGameModalVisible(false);
+    newGame();
+  };
+
+  const handleConfirmCancel = () => {
+    setNewGameModalVisible(false);
+  };
+
   const handleSaveGame = () => {
-    if (!moveTree) {
-      Alert.alert('Nothing to save', 'No game is loaded.');
-      return;
-    }
+    if (!moveTree) return; // button is disabled when !moveTree — guard only for safety
     onClose();
     openSaveGameModal();
   };
@@ -224,6 +245,13 @@ function SidebarContent({ onClose }: { onClose: () => void }) {
       />
       <SidebarItem icon="⚙" label="Settings" onPress={handleSettings} />
       <SidebarItem icon="⇅" label="Flip Board" onPress={handleFlip} />
+
+      <NewGameConfirmModal
+        visible={newGameModalVisible}
+        onSave={handleConfirmSave}
+        onDiscard={handleConfirmDiscard}
+        onCancel={handleConfirmCancel}
+      />
     </View>
   );
 }

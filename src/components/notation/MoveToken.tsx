@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MoveNode, NavigationPath } from '../../types/moveTree';
 import { nagsToString } from '../../utils/nag';
@@ -16,6 +16,10 @@ interface MoveTokenProps {
   showMoveNumberPrefix: boolean;
   /** Registers this token's View ref for auto-scroll measurements. */
   onRegisterRef: (nodeId: string, ref: View | null) => void;
+  /** True only for the first move in a variation line — enables long-press to promote. */
+  isVariationStart?: boolean;
+  /** Called after a 2-second hold; triggers promote variation flow. */
+  onPromote?: () => void;
 }
 
 export default function MoveToken({
@@ -24,13 +28,18 @@ export default function MoveToken({
   isActive,
   showMoveNumberPrefix,
   onRegisterRef,
+  isVariationStart,
+  onPromote,
 }: MoveTokenProps) {
   const navigateToNode = useChessStore((s) => s.navigateToNode);
   const nags = nagsToString(node.nags);
   const viewRef = useRef<View>(null);
+  const [isHolding, setIsHolding] = useState(false);
 
   const showWhiteNumber = node.color === 'w';
   const showBlackEllipsis = node.color === 'b' && showMoveNumberPrefix;
+
+  const canPromote = !!isVariationStart && !!onPromote;
 
   // Register this token's native view ref on mount so NotationPanel can
   // call measureLayout on it relative to the ScrollView.
@@ -49,8 +58,16 @@ export default function MoveToken({
           styles.token,
           isActive && styles.tokenActive,
           pressed && styles.tokenPressed,
+          isHolding && styles.tokenHolding,
         ]}
         onPress={() => navigateToNode(path)}
+        onPressIn={canPromote ? () => setIsHolding(true) : undefined}
+        onPressOut={canPromote ? () => setIsHolding(false) : undefined}
+        onLongPress={canPromote ? () => {
+          setIsHolding(false);
+          onPromote!();
+        } : undefined}
+        delayLongPress={canPromote ? 2000 : undefined}
         accessibilityRole="button"
         accessibilityLabel={`${showWhiteNumber ? node.moveNumber + '.' : ''}${node.san}`}
       >
@@ -90,6 +107,12 @@ const styles = StyleSheet.create({
   },
   tokenPressed: {
     backgroundColor: '#3A3A3A',
+  },
+  // Subtle highlight while long-press hold is in progress
+  tokenHolding: {
+    backgroundColor: '#2E2E2E',
+    borderWidth: 1,
+    borderColor: '#666',
   },
   moveNumber: {
     color: '#888',

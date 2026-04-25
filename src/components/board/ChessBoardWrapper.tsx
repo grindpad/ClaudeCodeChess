@@ -58,6 +58,7 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
   const boardTheme = useChessStore((s) => s.boardTheme);
   const showCoordinates = useChessStore((s) => s.showCoordinates);
   const boardFlipped = useChessStore((s) => s.boardFlipped);
+  const pendingMove = useChessStore((s) => s.pendingMove);
 
   const themeColors = BOARD_THEMES[boardTheme];
 
@@ -69,6 +70,15 @@ export default function ChessBoardWrapper({ size }: ChessBoardWrapperProps) {
     }
     boardRef.current?.resetBoard(currentFen);
   }, [currentFen]);
+
+  // When a move conflict is detected, reset the board back to the pre-move position
+  // and clear the stale isUserMoveRef so future FEN changes behave normally.
+  useEffect(() => {
+    if (pendingMove !== null) {
+      isUserMoveRef.current = false;
+      boardRef.current?.resetBoard(currentFen);
+    }
+  }, [pendingMove]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMove = useCallback(
     ({ move }: { move: Move; state: unknown }) => {

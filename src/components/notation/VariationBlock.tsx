@@ -22,6 +22,8 @@ interface VariationBlockProps {
   depth: number;
   activeNodeId: string | null;
   onRegisterRef: (nodeId: string, ref: View | null) => void;
+  /** Propagated from NotationPanel — called when a variation's first move is long-pressed. */
+  onPromote?: (path: NavigationPath, node: MoveNode) => void;
 }
 
 export default function VariationBlock({
@@ -31,6 +33,7 @@ export default function VariationBlock({
   depth,
   activeNodeId,
   onRegisterRef,
+  onPromote,
 }: VariationBlockProps) {
   // Variations at depth ≥ 2 are collapsible; shallower ones are always visible
   const collapsible = depth >= 2;
@@ -80,7 +83,7 @@ export default function VariationBlock({
 
       <Text style={styles.paren}>(</Text>
       <View style={styles.line}>
-        {renderLine(nodes, forkPath, variationIndex, depth, activeNodeId, onRegisterRef)}
+        {renderLine(nodes, forkPath, variationIndex, depth, activeNodeId, onRegisterRef, onPromote)}
       </View>
       <Text style={styles.paren}>)</Text>
     </View>
@@ -97,7 +100,8 @@ export default function VariationBlock({
  * @param variationIndex undefined = main line; number = which variation of the fork node
  * @param depth          0 = main line, 1 = first variation, 2+ = nested (collapsible)
  * @param activeNodeId   Currently selected node's ID (for highlighting)
- * @param onMeasure      Callback to record each token's y-position for auto-scroll
+ * @param onRegisterRef  Callback to record each token's view ref for auto-scroll
+ * @param onPromote      Called with (path, node) when a variation's first token is long-pressed
  */
 export function renderLine(
   nodes: MoveNode[],
@@ -105,7 +109,8 @@ export function renderLine(
   variationIndex: number | undefined,
   depth: number,
   activeNodeId: string | null,
-  onRegisterRef: (nodeId: string, ref: View | null) => void
+  onRegisterRef: (nodeId: string, ref: View | null) => void,
+  onPromote?: (path: NavigationPath, node: MoveNode) => void
 ): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
   // Track whether the previous sibling had a variation block (which breaks the flow).
@@ -131,6 +136,12 @@ export function renderLine(
       node.color === 'w' ||
       (node.color === 'b' && (isFirstInLine || needsEllipsisAfterBreak));
 
+    // Long-press promote: only the first token of a variation line (any depth)
+    const isVariationStart = variationIndex !== undefined && i === 0;
+    const onPromoteToken = isVariationStart && onPromote
+      ? () => onPromote(nodePath, node)
+      : undefined;
+
     if (node.preComment) {
       elements.push(
         <CommentBlock key={`pre-${node.id}`} text={node.preComment} />
@@ -145,6 +156,8 @@ export function renderLine(
         isActive={activeNodeId === node.id}
         showMoveNumberPrefix={showMoveNumberPrefix}
         onRegisterRef={onRegisterRef}
+        isVariationStart={isVariationStart}
+        onPromote={onPromoteToken}
       />
     );
 
@@ -173,6 +186,7 @@ export function renderLine(
             depth={depth + 1}
             activeNodeId={activeNodeId}
             onRegisterRef={onRegisterRef}
+            onPromote={onPromote}
           />
         );
       }

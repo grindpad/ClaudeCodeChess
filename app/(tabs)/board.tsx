@@ -3,6 +3,8 @@ import BoardContainer from '../../src/components/board/BoardContainer';
 import Sidebar from '../../src/components/board/Sidebar';
 import PgnImportModal from '../../src/components/pgn/PgnImportModal';
 import SaveGameModal from '../../src/components/pgn/SaveGameModal';
+import MoveConflictModal from '../../src/components/board/MoveConflictModal';
+import PromoteVariationModal from '../../src/components/notation/PromoteVariationModal';
 
 export default function BoardScreen() {
   return (
@@ -12,6 +14,8 @@ export default function BoardScreen() {
       </Sidebar>
       <PgnImportModal />
       <SaveGameModal />
+      <MoveConflictModal />
+      <PromoteVariationModal />
     </SafeAreaView>
   );
 }

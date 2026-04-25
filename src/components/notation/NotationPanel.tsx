@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useChessStore } from '../../store';
 import { renderLine } from './VariationBlock';
+import type { MoveNode, NavigationPath } from '../../types/moveTree';
 
 export default function NotationPanel() {
   const moveTree = useChessStore((s) => s.moveTree);
   const currentNode = useChessStore((s) => s.currentNode);
   const metadata = useChessStore((s) => s.metadata);
+  const setPendingPromotion = useChessStore((s) => s.setPendingPromotion);
 
   const scrollViewRef = useRef<ScrollView>(null);
   // Ref on the first View INSIDE the ScrollView — measureLayout uses this as the
@@ -28,6 +30,16 @@ export default function NotationPanel() {
       delete nodeViewRefs.current[nodeId];
     }
   }, []);
+
+  // Long-press on the first move of a variation — opens PromoteVariationModal
+  const handlePromote = useCallback((path: NavigationPath, node: MoveNode) => {
+    setPendingPromotion({
+      path,
+      firstMoveSan: node.san,
+      firstMoveNumber: node.moveNumber,
+      firstMoveColor: node.color,
+    });
+  }, [setPendingPromotion]);
 
   // Auto-scroll to active node whenever currentNode changes.
   // measureLayout is called relative to scrollViewContentRef (the inner content View),
@@ -75,7 +87,7 @@ export default function NotationPanel() {
   }
 
   const activeNodeId = currentNode?.id ?? null;
-  const tokens = renderLine(moveTree.mainLine, [], undefined, 0, activeNodeId, handleRegisterRef);
+  const tokens = renderLine(moveTree.mainLine, [], undefined, 0, activeNodeId, handleRegisterRef, handlePromote);
   const result = metadata?.result;
 
   return (

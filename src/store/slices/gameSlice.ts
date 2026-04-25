@@ -20,6 +20,12 @@ export interface GameSlice {
   // ── Actions ────────────────────────────────────────────────────────────────
   loadPgn: (pgn: string) => void;
   makeMove: (uci: string) => void;
+  /** Commits a pending move conflict as a new variation nested under the existing next node. */
+  commitPendingMoveAsVariation: () => void;
+  /** Commits a pending move conflict by replacing the existing mainline continuation. */
+  commitPendingMoveReplaceLine: () => void;
+  /** Promotes the variation at path to the mainline; the old mainline becomes variation[0]. */
+  promoteVariation: (path: NavigationPath) => void;
   navigateForward: () => void;
   navigateBack: () => void;
   navigateToNode: (path: NavigationPath) => void;
@@ -215,6 +221,26 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         }
       }
 
+      // FEATURE-2: Existing continuation diverges from new move — show conflict popup.
+      if (existingNext) {
+        const conflictParent = lastSeg ? currentLine[lastSeg.index] : null;
+        const newMoveNumber = result.color === 'b'
+          ? (conflictParent?.moveNumber ?? 0)
+          : (conflictParent?.moveNumber ?? 0) + 1;
+        set({
+          pendingMove: {
+            uci,
+            newSan: result.san,
+            newMoveNumber,
+            newColor: result.color as 'w' | 'b',
+            existingSan: existingNext.san,
+            existingMoveNumber: existingNext.moveNumber,
+            existingColor: existingNext.color,
+          },
+        });
+        return;
+      }
+
       // New move — create a node and splice into the current line.
       // BUG-001 FIX: Truncate the line at nextIndex (discard any nodes after the current
       // position), then append the new node. Also remove orphaned nodes from nodeMap.
@@ -335,6 +361,210 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
         activeLibraryEntryId: null,
         activeGameId: null,
         hasUnsavedChanges: false,
+        pendingMove: null,
+        pendingPromotion: null,
+      });
+    },
+
+    commitPendingMoveAsVariation() {
+      const { pendingMove, currentFen, moveTree, navigationPath, nodeMap } = get();
+      if (!pendingMove || !moveTree) return;
+
+      const { uci } = pendingMove;
+      const chess = new Chess(currentFen);
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length === 5 ? uci[4] : undefined;
+      const result = chess.move({ from, to, promotion });
+      if (!result) return;
+
+      const newFen = chess.fen();
+      const currentLine = getCurrentLine(moveTree, navigationPath);
+      const lastSeg = navigationPath.length > 0 ? navigationPath[navigationPath.length - 1] : null;
+      const nextIndex = lastSeg ? lastSeg.index + 1 : 0;
+      const existingNext = currentLine[nextIndex];
+      if (!existingNext) return;
+
+      const parentNode = lastSeg ? currentLine[lastSeg.index] : null;
+      const newNode: MoveNode = {
+        id: uuidv4(),
+        san: result.san,
+        uci,
+        fen: newFen,
+        ply: (parentNode?.ply ?? 0) + 1,
+        moveNumber: result.color === 'b'
+          ? (parentNode?.moveNumber ?? 0)
+          : (parentNode?.moveNumber ?? 0) + 1,
+        color: result.color as 'w' | 'b',
+        comment: null,
+        preComment: null,
+        nags: [],
+        variations: [],
+        parent: parentNode?.id ?? null,
+      };
+
+      const newVariationIndex = existingNext.variations.length;
+      const updatedExistingNext: MoveNode = {
+        ...existingNext,
+        variations: [...existingNext.variations, [newNode]],
+      };
+
+      // Replace existingNext in the current line (keep all surrounding nodes intact)
+      const newLine = [
+        ...currentLine.slice(0, nextIndex),
+        updatedExistingNext,
+        ...currentLine.slice(nextIndex + 1),
+      ];
+      const newTree = spliceLineIntoTree(moveTree, navigationPath, newLine);
+
+      const newNodeMap = new Map(nodeMap);
+      newNodeMap.set(newNode.id, newNode);
+      newNodeMap.set(updatedExistingNext.id, updatedExistingNext);
+
+      // Path to existingNext (which now holds the new variation)
+      const existingNextPath: NavigationPath = lastSeg
+        ? [...navigationPath.slice(0, -1), { ...lastSeg, index: nextIndex }]
+        : [{ index: 0 }];
+      // Path to the new variation's first node
+      const newPath: NavigationPath = [
+        ...existingNextPath,
+        { variationIndex: newVariationIndex, index: 0 },
+      ];
+
+      set({
+        moveTree: newTree,
+        nodeMap: newNodeMap,
+        navigationPath: newPath,
+        currentNode: newNode,
+        currentFen: newFen,
+        lastMoveSquares: [from, to],
+        hasUnsavedChanges: true,
+        pendingMove: null,
+      });
+    },
+
+    commitPendingMoveReplaceLine() {
+      const { pendingMove, currentFen, moveTree, navigationPath, nodeMap } = get();
+      if (!pendingMove || !moveTree) return;
+
+      const { uci } = pendingMove;
+      const chess = new Chess(currentFen);
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length === 5 ? uci[4] : undefined;
+      const result = chess.move({ from, to, promotion });
+      if (!result) return;
+
+      const newFen = chess.fen();
+      const currentLine = getCurrentLine(moveTree, navigationPath);
+      const lastSeg = navigationPath.length > 0 ? navigationPath[navigationPath.length - 1] : null;
+      const nextIndex = lastSeg ? lastSeg.index + 1 : 0;
+      const parentNode = lastSeg ? currentLine[lastSeg.index] : null;
+
+      const newNode: MoveNode = {
+        id: uuidv4(),
+        san: result.san,
+        uci,
+        fen: newFen,
+        ply: (parentNode?.ply ?? 0) + 1,
+        moveNumber: result.color === 'b'
+          ? (parentNode?.moveNumber ?? 0)
+          : (parentNode?.moveNumber ?? 0) + 1,
+        color: result.color as 'w' | 'b',
+        comment: null,
+        preComment: null,
+        nags: [],
+        variations: [],
+        parent: parentNode?.id ?? null,
+      };
+
+      // Remove all nodes from nextIndex onwards (they're discarded)
+      const newNodeMap = new Map(nodeMap);
+      removeNodesFromMap(currentLine.slice(nextIndex), newNodeMap);
+
+      const newLine = [...currentLine.slice(0, nextIndex), newNode];
+      const newTree = spliceLineIntoTree(moveTree, navigationPath, newLine);
+      newNodeMap.set(newNode.id, newNode);
+
+      const newPath: NavigationPath = lastSeg
+        ? [...navigationPath.slice(0, -1), { ...lastSeg, index: nextIndex }]
+        : [{ index: 0 }];
+
+      set({
+        moveTree: newTree,
+        nodeMap: newNodeMap,
+        navigationPath: newPath,
+        currentNode: newNode,
+        currentFen: newFen,
+        lastMoveSquares: [from, to],
+        hasUnsavedChanges: true,
+        pendingMove: null,
+      });
+    },
+
+    promoteVariation(path) {
+      const { moveTree, nodeMap } = get();
+      if (!moveTree || path.length === 0) return;
+
+      // path = [..., { variationIndex: vi, index: 0 }] — path to variation's first node
+      const lastSeg = path[path.length - 1];
+      const vi = lastSeg.variationIndex;
+      if (vi === undefined) return;
+
+      // forkPath = path to the fork node (the node whose .variations[vi] we promote)
+      const forkPath = path.slice(0, -1);
+      if (forkPath.length === 0) return;
+
+      const forkNode = resolveNode(moveTree, forkPath);
+      if (!forkNode || !forkNode.variations[vi] || forkNode.variations[vi].length === 0) return;
+
+      const forkLastSeg = forkPath[forkPath.length - 1];
+      const forkIndex = forkLastSeg.index;
+
+      // parentLine = the line that contains forkNode
+      const parentLine = getCurrentLine(moveTree, forkPath);
+      const nextIndex = forkIndex + 1;
+      const promotedVariation = forkNode.variations[vi];
+      const oldContinuation = parentLine.slice(nextIndex);
+
+      // New variations on forkNode: old mainline continuation first (if any), then rest
+      const remainingVariations = forkNode.variations.filter((_, i) => i !== vi);
+      const newVariations: MoveNode[][] = oldContinuation.length > 0
+        ? [oldContinuation, ...remainingVariations]
+        : remainingVariations;
+
+      const newForkNode: MoveNode = { ...forkNode, variations: newVariations };
+
+      // New parent line: everything before forkNode, then newForkNode, then promoted nodes
+      const newParentLine: MoveNode[] = [
+        ...parentLine.slice(0, forkIndex),
+        newForkNode,
+        ...promotedVariation,
+      ];
+
+      // Replace the parent line in the tree
+      const newTree = spliceLineIntoTree(moveTree, forkPath, newParentLine);
+
+      // Update nodeMap: forkNode object changed (new variations)
+      const newNodeMap = new Map(nodeMap);
+      newNodeMap.set(newForkNode.id, newForkNode);
+
+      // Path to the first promoted node (now at forkIndex+1 in the parent line)
+      const promotedFirstPath: NavigationPath = [
+        ...forkPath.slice(0, -1),
+        { ...forkLastSeg, index: forkIndex + 1 },
+      ];
+      const promotedFirst = promotedVariation[0];
+
+      set({
+        moveTree: newTree,
+        nodeMap: newNodeMap,
+        navigationPath: promotedFirstPath,
+        currentNode: promotedFirst,
+        currentFen: promotedFirst.fen,
+        lastMoveSquares: uciToSquares(promotedFirst.uci),
+        hasUnsavedChanges: true,
+        pendingPromotion: null,
       });
     },
   });

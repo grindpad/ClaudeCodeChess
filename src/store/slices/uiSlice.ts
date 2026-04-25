@@ -1,6 +1,24 @@
 import type { StateCreator } from 'zustand';
 import type { ChessStore } from '../chessStore';
 import type { ImportableGame } from '../../pgn/pgnParser';
+import type { NavigationPath } from '../../types/moveTree';
+
+export type PendingMoveConflict = {
+  uci: string;
+  newSan: string;
+  newMoveNumber: number;
+  newColor: 'w' | 'b';
+  existingSan: string;
+  existingMoveNumber: number;
+  existingColor: 'w' | 'b';
+};
+
+export type PendingPromotion = {
+  path: NavigationPath;
+  firstMoveSan: string;
+  firstMoveNumber: number;
+  firstMoveColor: 'w' | 'b';
+};
 
 export type BoardTheme = 'classic' | 'blue' | 'walnut';
 
@@ -50,6 +68,10 @@ export interface UiSlice {
   activeGameId: string | null;
   /** True when moves have been made since the last library save */
   hasUnsavedChanges: boolean;
+  /** Set when user makes a move that conflicts with existing notation — triggers MoveConflictModal */
+  pendingMove: PendingMoveConflict | null;
+  /** Set when user long-presses a variation's first move — triggers PromoteVariationModal */
+  pendingPromotion: PendingPromotion | null;
 
   // ── Actions ────────────────────────────────────────────────────────────────
   toggleNotationPanel: () => void;
@@ -71,6 +93,8 @@ export interface UiSlice {
   setPendingImportGames: (games: ImportableGame[] | null) => void;
   setActiveLibraryGame: (entryId: string | null, gameId: string | null) => void;
   setHasUnsavedChanges: (value: boolean) => void;
+  setPendingMove: (move: PendingMoveConflict | null) => void;
+  setPendingPromotion: (promo: PendingPromotion | null) => void;
 }
 
 export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSelector', never]], [], UiSlice> =
@@ -91,6 +115,8 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
     activeLibraryEntryId: null,
     activeGameId: null,
     hasUnsavedChanges: false,
+    pendingMove: null,
+    pendingPromotion: null,
 
     toggleNotationPanel() { set((s) => ({ notationPanelVisible: !s.notationPanelVisible })); },
     toggleExplorerPanel() { set((s) => ({ explorerPanelVisible: !s.explorerPanelVisible })); },
@@ -116,4 +142,6 @@ export const createUiSlice: StateCreator<ChessStore, [['zustand/subscribeWithSel
       set({ activeLibraryEntryId: entryId, activeGameId: gameId, hasUnsavedChanges: false });
     },
     setHasUnsavedChanges(value) { set({ hasUnsavedChanges: value }); },
+    setPendingMove(move) { set({ pendingMove: move }); },
+    setPendingPromotion(promo) { set({ pendingPromotion: promo }); },
   });

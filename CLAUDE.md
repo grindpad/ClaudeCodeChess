@@ -179,6 +179,28 @@ Session is restored on mount in `app/_layout.tsx` via `useSessionPersistence`. P
 ### NavigationPath Serialisation
 `NavigationPath` (a `PathSegment[]`) is serialised to/from JSON strings for `localStorage` using `serializeNavigationPath` / `deserializeNavigationPath` in `src/utils/navigationUtils.ts`.
 
+### New Game Flow (FIX-1)
+`SidebarContent.handleNewGame` uses a custom `NewGameConfirmModal` instead of `Alert.alert`:
+- If `hasUnsavedChanges && hasMoves` → close sidebar, show modal with Save / Discard / Cancel.
+- "Save Game" sets `pendingNewGameRef.current = true` and opens `SaveGameModal`. A `useEffect` watching `saveGameModalVisible` detects the modal closing; if `hasUnsavedChanges` is now false (save succeeded), calls `newGame()`.
+- If no unsaved changes (or empty board) → `newGame()` immediately, no modal.
+
+### Move Conflict Detection (FEATURE-2)
+When `makeMove` encounters an `existingNext` node that doesn't match the new move (and it's not already a variation), it sets `pendingMove: PendingMoveConflict | null` in uiSlice and returns without committing. `MoveConflictModal` (in `board.tsx`) reads `pendingMove` and presents three options:
+- **Add as Variation** → `commitPendingMoveAsVariation()`: appends new node to `existingNext.variations`.
+- **Replace Main Line** → `commitPendingMoveReplaceLine()`: truncates the line at `nextIndex` and replaces.
+- **Cancel** → `setPendingMove(null)`.
+
+`ChessBoardWrapper` subscribes to `pendingMove`; when it becomes non-null, `isUserMoveRef` is cleared and `resetBoard(currentFen)` snaps the board back. When a commit action fires and changes `currentFen`, the board advances normally via the existing `useEffect`.
+
+### Promote Variation (FEATURE-3)
+Long-pressing (2s) the first token of any variation line in the notation calls `setPendingPromotion({ path, ... })` in uiSlice. `PromoteVariationModal` (in `board.tsx`) shows and on "Promote" calls `promoteVariation(path)` in gameSlice:
+1. Derives `forkPath` (path to the parent fork node) from the variation path.
+2. Swaps: `promotedVariation` replaces `parentLine.slice(forkIndex + 1)` in the tree; the old continuation becomes `forkNode.variations[0]` (skipped if empty).
+3. Navigates to the first promoted node at `[...forkPath.slice(0, -1), { ...forkLastSeg, index: forkIndex + 1 }]`.
+
+The `onPromote` callback is threaded through `renderLine` and `VariationBlock` via an optional `(path, node) => void` parameter. Only tokens with `isVariationStart={true}` have the long-press handler wired.
+
 ---
 
 ## Running the App

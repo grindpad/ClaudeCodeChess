@@ -740,3 +740,100 @@ Tapping a row navigates via `navigateToNode(path)` and dismisses. Backdrop tap o
 - [ ] ◀ backward → no picker, always navigates directly
 - [ ] Token tap in notation → no picker, navigates directly
 - [ ] 3-level deep variation node with ▶ → picker shows correct nested variation paths
+
+---
+
+## New Game Fix + Variation Override + Promote Variation (2026-04-25)
+
+### FIX-1 — New Game confirmation modal
+
+**Root cause of old behaviour:** `handleNewGame` in `Sidebar.tsx` used `Alert.alert` which on some iOS PWA configurations renders with native OS styling inconsistent with the greyscale theme. It also offered no "Save Game" option — only "Discard". When `hasUnsavedChanges` was false but a game was loaded, it still showed a redundant confirmation prompt.
+
+**Fix applied:**
+- Replaced `Alert.alert` with a custom `NewGameConfirmModal` (new file `src/components/board/NewGameConfirmModal.tsx`) styled in the greyscale theme with minimum 44pt touch targets.
+- New logic in `SidebarContent.handleNewGame`:
+  - If `hasUnsavedChanges` is false OR no moves exist → `newGame()` immediately, no modal.
+  - If `hasUnsavedChanges && hasMoves` → close sidebar, show `NewGameConfirmModal` with three buttons: Save Game / Discard / Cancel.
+- "Save Game" opens `SaveGameModal`; a `useEffect` watching `saveGameModalVisible` detects the modal closing and checks `hasUnsavedChanges` — if false (save succeeded), calls `newGame()`. If true (user cancelled save), does nothing.
+- `newGame()` in `gameSlice.ts` now also clears `pendingMove` and `pendingPromotion` for full state hygiene.
+
+**Files changed:** `src/store/slices/gameSlice.ts`, `src/components/board/Sidebar.tsx`, `src/components/board/NewGameConfirmModal.tsx` (new)
+
+**Status: IMPLEMENTED**
+
+**Needs device testing:**
+- [ ] New game with no moves → resets immediately, no modal
+- [ ] New game with moves but no unsaved changes → resets immediately, no modal
+- [ ] New game with unsaved changes → modal appears with all 3 buttons
+- [ ] "Save Game" → SaveGameModal appears; after saving → board resets to starting position
+- [ ] "Save Game" then cancel SaveGameModal → game stays open, nothing resets
+- [ ] "Discard" → board resets immediately
+- [ ] "Cancel" → modal dismisses, game continues unchanged
+
+---
+
+### FEATURE-2 — Move conflict popup (override or add variation)
+
+**Design:** When a user drags a piece to a square that creates a divergence from the existing next mainline move, instead of silently overwriting the tree, `makeMove` in `gameSlice.ts` intercepts the move, stores it as `pendingMove` in the store, and returns without committing. `MoveConflictModal` (new file `src/components/board/MoveConflictModal.tsx`) reads `pendingMove` and displays a three-button modal.
+
+**Trigger condition in `makeMove`:** After the two existing-move checks (exact match → navigate mainline; exists as variation → navigate variation), a third guard fires: `if (existingNext)` → set `pendingMove`, return. This fires only when `existingNext` is present and the move doesn't match any known continuation.
+
+**Board reset on conflict:** `ChessBoardWrapper` subscribes to `pendingMove`. When it becomes non-null, `isUserMoveRef.current` is cleared and `resetBoard(currentFen)` is called so the board snaps back to the pre-move position while the modal is shown.
+
+**Modal buttons:**
+- **Add as Variation** → `commitPendingMoveAsVariation()`: re-applies the move on `currentFen`, appends a new variation to `existingNext.variations`, navigates into it. `existingNext` and all prior mainline nodes are unchanged.
+- **Replace Main Line** → `commitPendingMoveReplaceLine()`: re-applies the move, truncates `currentLine` from `nextIndex` onwards (all discarded from nodeMap), appends new node.
+- **Cancel** → `setPendingMove(null)`: modal dismisses, board already reset.
+
+**Files changed:** `src/store/slices/uiSlice.ts`, `src/store/slices/gameSlice.ts`, `src/components/board/ChessBoardWrapper.tsx`, `src/components/board/MoveConflictModal.tsx` (new), `app/(tabs)/board.tsx`
+
+**Status: IMPLEMENTED**
+
+**Needs device testing:**
+- [ ] Make a move that diverges from existing notation → modal appears with correct labels
+- [ ] "Add as Variation" → notation shows new variation nested under existing move; navigation at new node
+- [ ] "Replace Main Line" → old continuation removed; new move takes its place
+- [ ] "Cancel" → board snaps back to pre-move position; notation unchanged
+- [ ] Modal never appears when playing into an empty position (no existing next move)
+- [ ] Modal never appears when replaying a move that exactly matches existing mainline
+- [ ] Modal never appears when replaying a move that exactly matches an existing variation
+
+---
+
+### FEATURE-3 — Long-press variation first move to promote
+
+**Design:** A 2-second hold on the first `MoveToken` of any variation line triggers a `PromoteVariationModal` (new file `src/components/notation/PromoteVariationModal.tsx`). The modal shows the variation's first move (bold white) and a "Promote / Cancel" choice. "Promote" swaps the variation into the mainline.
+
+**Long-press detection:** `MoveToken` uses Pressable's native `onLongPress` + `delayLongPress={2000}` (only wired when `isVariationStart && onPromote` are both truthy). Visual feedback: `onPressIn` sets `isHolding` state which applies `styles.tokenHolding` (grey background + subtle border). `onPressOut` and `onLongPress` clear it.
+
+**Prop threading:**
+- `renderLine` in `VariationBlock.tsx` accepts `onPromote?: (path, node) => void`.
+- For variation lines (`variationIndex !== undefined`), the first token (`i === 0`) receives `isVariationStart={true}` and `onPromote={() => onPromote(nodePath, node)}`.
+- `VariationBlock` passes `onPromote` to recursive `renderLine` calls so nested variations are also promotable.
+- `NotationPanel` creates `handlePromote(path, node)` which calls `setPendingPromotion({ path, firstMoveSan, firstMoveNumber, firstMoveColor })`.
+
+**Promotion logic in `promoteVariation(path)`:**
+1. Derive `forkPath = path.slice(0, -1)` (path to the fork node) and `vi = lastSeg.variationIndex`.
+2. `parentLine = getCurrentLine(tree, forkPath)`.
+3. `promotedVariation = forkNode.variations[vi]`, `oldContinuation = parentLine.slice(forkIndex + 1)`.
+4. `newForkNode.variations = [oldContinuation, ...otherVariations]` (old mainline becomes first variation; if empty, skip it).
+5. `newParentLine = [...parentLine.slice(0, forkIndex), newForkNode, ...promotedVariation]`.
+6. `spliceLineIntoTree(tree, forkPath, newParentLine)` → replaces the line containing forkNode.
+7. Navigate to `promotedFirstPath = [...forkPath.slice(0, -1), { ...forkLastSeg, index: forkIndex + 1 }]` (the first promoted node's new mainline position).
+8. Update nodeMap: `newForkNode` replaces old `forkNode`.
+
+Works at any variation depth. Handles the edge case of no mainline continuation (empty `oldContinuation` is not added as a variation).
+
+**Files changed:** `src/store/slices/uiSlice.ts`, `src/store/slices/gameSlice.ts`, `src/components/notation/MoveToken.tsx`, `src/components/notation/VariationBlock.tsx`, `src/components/notation/NotationPanel.tsx`, `src/components/notation/PromoteVariationModal.tsx` (new), `app/(tabs)/board.tsx`
+
+**Status: IMPLEMENTED**
+
+**Needs device testing:**
+- [ ] Hold variation's first move for 2s → modal appears with correct SAN/move number
+- [ ] Release before 2s → no modal; holding highlight clears immediately
+- [ ] Depth-1 variation promote → variation becomes mainline; old mainline shown as variation below
+- [ ] Depth-2 nested variation promote → works within the parent variation line
+- [ ] Variation with sub-variations → all descendant nodes move with it (no orphaned nodes)
+- [ ] Non-first move in variation → long-press does nothing (no promote handler wired)
+- [ ] Cancel → notation unchanged
+- [ ] After promote → notation re-renders with new mainline (normal weight) and old mainline as variation (purple, indented)
