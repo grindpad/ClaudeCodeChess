@@ -9,9 +9,16 @@ export default function NotationPanel() {
   const metadata = useChessStore((s) => s.metadata);
 
   const scrollViewRef = useRef<ScrollView>(null);
+  // Ref on the first View INSIDE the ScrollView — measureLayout uses this as the
+  // coordinate origin so `y` is the absolute offset within the scroll content.
+  const scrollViewContentRef = useRef<View>(null);
+  // Measured height of the visible ScrollView area — used to centre the active token.
+  const scrollViewHeightRef = useRef(0);
+  // True while the user is manually dragging the notation panel — suppresses auto-scroll.
+  const userIsScrolling = useRef(false);
+
   // Map of nodeId → native View ref for measureLayout-based auto-scroll.
-  // Using a plain object rather than a Map so refs survive re-renders without
-  // triggering unnecessary effects.
+  // Using a plain object so refs survive re-renders without triggering effects.
   const nodeViewRefs = useRef<Record<string, View | null>>({});
 
   const handleRegisterRef = useCallback((nodeId: string, ref: View | null) => {
@@ -22,27 +29,30 @@ export default function NotationPanel() {
     }
   }, []);
 
-  // BUG-C FIX: auto-scroll to active node using measureLayout relative to the
-  // ScrollView so the position is correct for moves in nested variations.
+  // Auto-scroll to active node whenever currentNode changes.
+  // measureLayout is called relative to scrollViewContentRef (the inner content View),
+  // so `y` is the exact scroll offset needed to show that token.
   useEffect(() => {
     if (!currentNode) return;
     const viewRef = nodeViewRefs.current[currentNode.id];
-    if (!viewRef || !scrollViewRef.current) return;
+    if (!viewRef || !scrollViewContentRef.current || !scrollViewRef.current) return;
 
-    // Small delay to let layout settle after navigation
+    // 50 ms delay lets React commit the new render and lay out the newly active token
+    // before we try to measure it. requestAnimationFrame alone is not reliable on iOS PWA.
     const timer = setTimeout(() => {
+      if (userIsScrolling.current) return;
       try {
         (viewRef as any).measureLayout(
-          scrollViewRef.current as any,
-          (_x: number, y: number, _w: number, h: number) => {
-            // Centre the active move vertically in the panel
+          scrollViewContentRef.current as any,
+          (_x: number, y: number) => {
+            if (userIsScrolling.current) return;
             scrollViewRef.current?.scrollTo({
-              y: Math.max(0, y - 80),
+              y: Math.max(0, y - scrollViewHeightRef.current / 2),
               animated: true,
             });
           },
           () => {
-            // measureLayout failed (e.g., node unmounted) — no-op
+            // measureLayout failed (e.g. node unmounted) — silent no-op
           }
         );
       } catch {
@@ -66,8 +76,6 @@ export default function NotationPanel() {
 
   const activeNodeId = currentNode?.id ?? null;
   const tokens = renderLine(moveTree.mainLine, [], undefined, 0, activeNodeId, handleRegisterRef);
-
-  // Show result tag at the end if available
   const result = metadata?.result;
 
   return (
@@ -76,12 +84,28 @@ export default function NotationPanel() {
       style={styles.scrollView}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator
+      onLayout={(e) => {
+        scrollViewHeightRef.current = e.nativeEvent.layout.height;
+      }}
+      onScrollBeginDrag={() => {
+        userIsScrolling.current = true;
+      }}
+      onScrollEndDrag={() => {
+        userIsScrolling.current = false;
+      }}
+      // On iOS momentum scrolling continues after drag ends; keep the flag set until idle.
+      onMomentumScrollEnd={() => {
+        userIsScrolling.current = false;
+      }}
     >
-      <View style={styles.movesContainer}>
-        {tokens}
-        {result && result !== '*' && (
-          <Text style={styles.result}>{result}</Text>
-        )}
+      {/* scrollViewContentRef anchored here so measureLayout returns content-relative coords */}
+      <View ref={scrollViewContentRef} collapsable={false}>
+        <View style={styles.movesContainer}>
+          {tokens}
+          {result && result !== '*' && (
+            <Text style={styles.result}>{result}</Text>
+          )}
+        </View>
       </View>
     </ScrollView>
   );

@@ -5,6 +5,7 @@
  * STYLE-C: Visual button height 36pt, hitSlop 8pt each side for 44pt touch target.
  * FEATURE-A: Panel label is tappable — shows a popup menu to jump directly to
  *   any panel (Notation / Explorer / Engine).
+ * FEATURE-A2: ▶ button shows a variation picker when the next position branches.
  */
 
 import React, { useState } from 'react';
@@ -13,33 +14,138 @@ import { useChessStore } from '../../store';
 import { selectCanGoForward, selectCanGoBack } from '../../store/selectors';
 import type { PanelTab } from '../shared/PanelTabs';
 import { PANEL_TABS, PANEL_LABELS } from '../shared/PanelTabs';
+import VariationPickerModal, { type VariationOption } from '../notation/VariationPickerModal';
+import type { MoveNode, MoveTree, NavigationPath } from '../../types/moveTree';
+import { nagsToString } from '../../utils/nag';
 
 interface NavigationControlsProps {
   activePanel?: PanelTab;
   onPanelChange?: (tab: PanelTab) => void;
 }
 
+// ── Local tree helpers (mirrors private functions in gameSlice) ────────────────
+
+function getLine(tree: MoveTree, path: NavigationPath): MoveNode[] {
+  if (path.length === 0) return tree.mainLine;
+  let line = tree.mainLine;
+  for (let i = 0; i < path.length - 1; i++) {
+    const seg = path[i];
+    const nextSeg = path[i + 1];
+    if (nextSeg.variationIndex !== undefined) {
+      line = line[seg.index]?.variations[nextSeg.variationIndex] ?? [];
+    }
+  }
+  return line;
+}
+
+function localAdvancePath(tree: MoveTree, path: NavigationPath): NavigationPath {
+  if (path.length === 0) {
+    return tree.mainLine.length > 0 ? [{ index: 0 }] : path;
+  }
+  const line = getLine(tree, path);
+  const lastSeg = path[path.length - 1];
+  if (lastSeg.index + 1 < line.length) {
+    return [...path.slice(0, -1), { ...lastSeg, index: lastSeg.index + 1 }];
+  }
+  return path;
+}
+
+function formatMoveLabel(node: MoveNode): string {
+  return node.color === 'w'
+    ? `${node.moveNumber}. ${node.san}`
+    : `${node.moveNumber}… ${node.san}`;
+}
+
+function buildContinuations(
+  tree: MoveTree,
+  navigationPath: NavigationPath
+): { options: VariationOption[]; mainlinePath: NavigationPath } | null {
+  const line = getLine(tree, navigationPath);
+  const lastSeg = navigationPath.length > 0 ? navigationPath[navigationPath.length - 1] : null;
+  const nextIndex = lastSeg ? lastSeg.index + 1 : 0;
+  const nextNode = line[nextIndex];
+
+  if (!nextNode || nextNode.variations.length === 0) return null;
+
+  const advancedPath = localAdvancePath(tree, navigationPath);
+
+  const options: VariationOption[] = [];
+
+  // Mainline
+  options.push({
+    label: 'Main line',
+    san: formatMoveLabel(nextNode),
+    nag: nagsToString(nextNode.nags) || null,
+    commentPreview: nextNode.comment ?? null,
+    navigationPath: advancedPath,
+  });
+
+  // Each variation of the next node
+  for (let vi = 0; vi < nextNode.variations.length; vi++) {
+    const varLine = nextNode.variations[vi];
+    const firstNode = varLine[0];
+    if (!firstNode) continue;
+    const varPath: NavigationPath = [...advancedPath, { variationIndex: vi, index: 0 }];
+    options.push({
+      label: `Variation ${vi + 1}`,
+      san: formatMoveLabel(firstNode),
+      nag: nagsToString(firstNode.nags) || null,
+      commentPreview: firstNode.comment ?? null,
+      navigationPath: varPath,
+    });
+  }
+
+  return { options, mainlinePath: advancedPath };
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function NavigationControls({ activePanel, onPanelChange }: NavigationControlsProps) {
   const navigateBack = useChessStore((s) => s.navigateBack);
   const navigateForward = useChessStore((s) => s.navigateForward);
+  const navigateToNode = useChessStore((s) => s.navigateToNode);
   const resetToStartPosition = useChessStore((s) => s.resetToStartPosition);
   const flipBoard = useChessStore((s) => s.flipBoard);
 
   const canGoForward = useChessStore(selectCanGoForward);
   const canGoBack = useChessStore(selectCanGoBack);
 
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [panelMenuVisible, setPanelMenuVisible] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerOptions, setPickerOptions] = useState<VariationOption[]>([]);
 
   const handlePanelSelect = (tab: PanelTab) => {
-    setMenuVisible(false);
+    setPanelMenuVisible(false);
     onPanelChange?.(tab);
+  };
+
+  const handleForward = () => {
+    const { moveTree, navigationPath } = useChessStore.getState();
+    if (!moveTree) return;
+
+    const result = buildContinuations(moveTree, navigationPath);
+    if (result) {
+      setPickerOptions(result.options);
+      setPickerVisible(true);
+    } else {
+      navigateForward();
+    }
+  };
+
+  const handlePickerSelect = (path: NavigationPath) => {
+    setPickerVisible(false);
+    navigateToNode(path);
+  };
+
+  const handlePickerDismiss = () => {
+    setPickerVisible(false);
   };
 
   return (
     <View style={styles.row}>
       <NavButton label="⏮" onPress={resetToStartPosition} disabled={!canGoBack} />
       <NavButton label="◀" onPress={navigateBack} disabled={!canGoBack} />
-      <NavButton label="▶" onPress={navigateForward} disabled={!canGoForward} />
+      <NavButton label="▶" onPress={handleForward} disabled={!canGoForward} />
       <NavButton label="⇅" onPress={flipBoard} />
 
       {activePanel && (
@@ -49,7 +155,7 @@ export default function NavigationControls({ activePanel, onPanelChange }: Navig
               styles.panelLabelBtn,
               pressed && styles.panelLabelBtnPressed,
             ]}
-            onPress={() => setMenuVisible(true)}
+            onPress={() => setPanelMenuVisible(true)}
             hitSlop={8}
             accessibilityLabel="Select panel"
             accessibilityRole="button"
@@ -61,12 +167,12 @@ export default function NavigationControls({ activePanel, onPanelChange }: Navig
 
           {/* Panel selector popup */}
           <Modal
-            visible={menuVisible}
+            visible={panelMenuVisible}
             transparent
             animationType="none"
-            onRequestClose={() => setMenuVisible(false)}
+            onRequestClose={() => setPanelMenuVisible(false)}
           >
-            <Pressable style={styles.modalBackdrop} onPress={() => setMenuVisible(false)}>
+            <Pressable style={styles.modalBackdrop} onPress={() => setPanelMenuVisible(false)}>
               <View style={styles.menuPopup}>
                 {PANEL_TABS.map((tab) => (
                   <Pressable
@@ -94,6 +200,14 @@ export default function NavigationControls({ activePanel, onPanelChange }: Navig
           </Modal>
         </>
       )}
+
+      {/* Variation picker — only shown when ▶ leads to a branch */}
+      <VariationPickerModal
+        isVisible={pickerVisible}
+        continuations={pickerOptions}
+        onSelect={handlePickerSelect}
+        onDismiss={handlePickerDismiss}
+      />
     </View>
   );
 }
