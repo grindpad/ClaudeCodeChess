@@ -29,18 +29,20 @@ interface PanelTabsProps {
 }
 
 export default function PanelTabs({ activeTab, onTabChange }: PanelTabsProps) {
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const onTabChangeRef = useRef(onTabChange);
+  onTabChangeRef.current = onTabChange;
+
   const panRef = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, { dx, dy }) =>
         Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12,
       onPanResponderRelease: (_, { dx }) => {
-        onTabChange((() => {
-          const idx = PANEL_TABS.indexOf(activeTab);
-          if (dx < -40 && idx < PANEL_TABS.length - 1) return PANEL_TABS[idx + 1];
-          if (dx > 40 && idx > 0) return PANEL_TABS[idx - 1];
-          return activeTab;
-        })());
+        const idx = PANEL_TABS.indexOf(activeTabRef.current);
+        if (dx < -40 && idx < PANEL_TABS.length - 1) onTabChangeRef.current(PANEL_TABS[idx + 1]);
+        else if (dx > 40 && idx > 0) onTabChangeRef.current(PANEL_TABS[idx - 1]);
       },
     })
   ).current;
