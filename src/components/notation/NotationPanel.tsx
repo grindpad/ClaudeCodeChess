@@ -31,7 +31,7 @@ export default function NotationPanel() {
     }
   }, []);
 
-  // Long-press on the first move of a variation — opens PromoteVariationModal
+  // Double-tap on the first move of a variation — opens PromoteVariationModal
   const handlePromote = useCallback((path: NavigationPath, node: MoveNode) => {
     setPendingPromotion({
       path,

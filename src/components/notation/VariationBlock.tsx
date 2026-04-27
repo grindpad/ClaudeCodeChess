@@ -136,7 +136,7 @@ export function renderLine(
       node.color === 'w' ||
       (node.color === 'b' && (isFirstInLine || needsEllipsisAfterBreak));
 
-    // Long-press promote: only the first token of a variation line (any depth)
+    // Double-tap promote: only the first token of a variation line (any depth)
     const isVariationStart = variationIndex !== undefined && i === 0;
     const onPromoteToken = isVariationStart && onPromote
       ? () => onPromote(nodePath, node)

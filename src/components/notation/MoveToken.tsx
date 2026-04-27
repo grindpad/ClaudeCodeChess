@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MoveNode, NavigationPath } from '../../types/moveTree';
 import { nagsToString } from '../../utils/nag';
@@ -16,9 +16,9 @@ interface MoveTokenProps {
   showMoveNumberPrefix: boolean;
   /** Registers this token's View ref for auto-scroll measurements. */
   onRegisterRef: (nodeId: string, ref: View | null) => void;
-  /** True only for the first move in a variation line — enables long-press to promote. */
+  /** True only for the first move in a variation line — enables double-tap to promote. */
   isVariationStart?: boolean;
-  /** Called after a 2-second hold; triggers promote variation flow. */
+  /** Called on double-tap; triggers promote variation flow. */
   onPromote?: () => void;
 }
 
@@ -34,7 +34,7 @@ export default function MoveToken({
   const navigateToNode = useChessStore((s) => s.navigateToNode);
   const nags = nagsToString(node.nags);
   const viewRef = useRef<View>(null);
-  const [isHolding, setIsHolding] = useState(false);
+  const lastTapRef = useRef<number>(0);
 
   const showWhiteNumber = node.color === 'w';
   const showBlackEllipsis = node.color === 'b' && showMoveNumberPrefix;
@@ -51,6 +51,19 @@ export default function MoveToken({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id]);
 
+  const handlePress = () => {
+    if (canPromote) {
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        lastTapRef.current = 0;
+        onPromote!();
+        return;
+      }
+      lastTapRef.current = now;
+    }
+    navigateToNode(path);
+  };
+
   return (
     <View ref={viewRef} collapsable={false}>
       <Pressable
@@ -58,16 +71,8 @@ export default function MoveToken({
           styles.token,
           isActive && styles.tokenActive,
           pressed && styles.tokenPressed,
-          isHolding && styles.tokenHolding,
         ]}
-        onPress={() => navigateToNode(path)}
-        onPressIn={canPromote ? () => setIsHolding(true) : undefined}
-        onPressOut={canPromote ? () => setIsHolding(false) : undefined}
-        onLongPress={canPromote ? () => {
-          setIsHolding(false);
-          onPromote!();
-        } : undefined}
-        delayLongPress={canPromote ? 2000 : undefined}
+        onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={`${showWhiteNumber ? node.moveNumber + '.' : ''}${node.san}`}
       >
@@ -107,12 +112,6 @@ const styles = StyleSheet.create({
   },
   tokenPressed: {
     backgroundColor: '#3A3A3A',
-  },
-  // Subtle highlight while long-press hold is in progress
-  tokenHolding: {
-    backgroundColor: '#2E2E2E',
-    borderWidth: 1,
-    borderColor: '#666',
   },
   moveNumber: {
     color: '#888',
