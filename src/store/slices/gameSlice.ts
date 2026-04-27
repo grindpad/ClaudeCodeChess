@@ -523,46 +523,50 @@ export const createGameSlice: StateCreator<ChessStore, [['zustand/subscribeWithS
 
       // parentLine = the line that contains forkNode
       const parentLine = getCurrentLine(moveTree, forkPath);
-      const nextIndex = forkIndex + 1;
       const promotedVariation = forkNode.variations[vi];
-      const oldContinuation = parentLine.slice(nextIndex);
 
-      // New variations on forkNode: old mainline continuation first (if any), then rest
+      // forkNode is demoted: strip only the promoted variation, keep the rest on it
       const remainingVariations = forkNode.variations.filter((_, i) => i !== vi);
-      const newVariations: MoveNode[][] = oldContinuation.length > 0
-        ? [oldContinuation, ...remainingVariations]
-        : remainingVariations;
+      const strippedForkNode: MoveNode = { ...forkNode, variations: remainingVariations };
 
-      const newForkNode: MoveNode = { ...forkNode, variations: newVariations };
+      // Demoted continuation: forkNode itself (stripped) + everything that followed it
+      const demotedContinuation: MoveNode[] = [strippedForkNode, ...parentLine.slice(forkIndex + 1)];
 
-      // New parent line: everything before forkNode, then newForkNode, then promoted nodes
+      // First promoted node replaces forkNode in the line; the demoted continuation becomes its variation[0]
+      const promotedFirst = promotedVariation[0];
+      const newPromotedFirst: MoveNode = {
+        ...promotedFirst,
+        variations: [demotedContinuation, ...promotedFirst.variations],
+      };
+
+      // New parent line: everything before forkNode, then newPromotedFirst, then rest of promoted variation
       const newParentLine: MoveNode[] = [
         ...parentLine.slice(0, forkIndex),
-        newForkNode,
-        ...promotedVariation,
+        newPromotedFirst,
+        ...promotedVariation.slice(1),
       ];
 
       // Replace the parent line in the tree
       const newTree = spliceLineIntoTree(moveTree, forkPath, newParentLine);
 
-      // Update nodeMap: forkNode object changed (new variations)
+      // Update nodeMap
       const newNodeMap = new Map(nodeMap);
-      newNodeMap.set(newForkNode.id, newForkNode);
+      newNodeMap.set(strippedForkNode.id, strippedForkNode);
+      newNodeMap.set(newPromotedFirst.id, newPromotedFirst);
 
-      // Path to the first promoted node (now at forkIndex+1 in the parent line)
+      // Path to the first promoted node (now at forkIndex, replacing forkNode's slot)
       const promotedFirstPath: NavigationPath = [
         ...forkPath.slice(0, -1),
-        { ...forkLastSeg, index: forkIndex + 1 },
+        { ...forkLastSeg, index: forkIndex },
       ];
-      const promotedFirst = promotedVariation[0];
 
       set({
         moveTree: newTree,
         nodeMap: newNodeMap,
         navigationPath: promotedFirstPath,
-        currentNode: promotedFirst,
-        currentFen: promotedFirst.fen,
-        lastMoveSquares: uciToSquares(promotedFirst.uci),
+        currentNode: newPromotedFirst,
+        currentFen: newPromotedFirst.fen,
+        lastMoveSquares: uciToSquares(newPromotedFirst.uci),
         hasUnsavedChanges: true,
         pendingPromotion: null,
       });
